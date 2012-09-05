@@ -1,0 +1,15 @@
+
+A brief description of the code:
+
+  cmds/permissioncontroller
+      A replacement for the Java PermissionController
+      service.  This is the service that decides who can
+      connect to which binder interfaces.  This stub
+      allows anyone to connect.
+
+  cmds/powermanager
+      A stub replacement for the PowerManager.java
+      service.  This is used by StageFright to prevent
+      the system from going to sleep while playing media
+      files.  This stub doesn't do anything other than
+      allow clients to connect.
