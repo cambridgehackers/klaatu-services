@@ -20,7 +20,6 @@
 
 #include <stdio.h>
 #include <binder/BinderService.h>
-#include <ui/PowerManager.h>
 #include <utils/Singleton.h>
 #include <powermanager/IPowerManager.h>
 
