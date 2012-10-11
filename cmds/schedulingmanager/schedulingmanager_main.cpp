@@ -34,7 +34,7 @@ class SchedulingPolicyService : public BinderService<SchedulingPolicyService>,
     friend class BinderService<SchedulingPolicyService>;
 
 public:
-    static const char *getServiceName() { return "Scheduling"; }
+    static const char *getServiceName() { return "scheduling_policy"; }
     // BnSchedulingPolicyService
     int requestPriority(/*pid_t*/int32_t pid, /*pid_t*/int32_t tid, int32_t prio) {
         printf("Setting priority for pid=%d tid=%d prio=%d\n", pid, tid, prio);
