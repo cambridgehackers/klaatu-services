@@ -37,16 +37,18 @@ public:
     static const char *getServiceName() { return "scheduling_policy"; }
     // BnSchedulingPolicyService
     int requestPriority(/*pid_t*/int32_t pid, /*pid_t*/int32_t tid, int32_t prio) {
-        printf("Setting priority for pid=%d tid=%d prio=%d\n", pid, tid, prio);
+        ALOGE("Setting priority for pid=%d tid=%d prio=%d\n", pid, tid, prio);
         return true;
     }
 };
 
 int main(int argc, char **argv)
 {
+    ALOGE("schedulingmanager starting up");
     sp<ProcessState> proc(ProcessState::self());
     SchedulingPolicyService::instantiate();
     ProcessState::self()->startThreadPool();
     IPCThreadState::self()->joinThreadPool();
+    ALOGE("schedulingmanager started ok");
     return 0;
 }
