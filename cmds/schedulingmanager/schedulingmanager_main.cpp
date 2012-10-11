@@ -21,7 +21,7 @@
   make connections to various services.
  */
 
-#define LOG_TAG="SchedulingPolicy"
+#define LOG_TAG "SchedulingPolicy"
 
 #include <utils/Log.h>
 #include <binder/BinderService.h>
