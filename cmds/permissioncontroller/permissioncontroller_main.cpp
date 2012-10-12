@@ -21,6 +21,8 @@
   make connections to various services.
  */
 
+#define LOG_TAG "PermController"
+
 #include <binder/BinderService.h>
 #include <binder/IPermissionController.h>
 #include <utils/Singleton.h>
@@ -37,7 +39,7 @@ public:
     static const char *getServiceName() { return "permission"; }
     // BnPermissionController
     bool checkPermission(const String16& permission, int32_t pid, int32_t uid) {
-        printf("Checking permission '%s' for pid=%d uid=%d\n", String8(permission).string(), pid, uid);
+	ALOGI("Checking permission '%s' for pid=%d uid=%d\n", String8(permission).string(), pid, uid);
         return true;
     }
 };

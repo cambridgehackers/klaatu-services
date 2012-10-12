@@ -34,6 +34,8 @@
  * limitations under the License.
  */
 
+#define LOG_TAG "PowerManager"
+
 #include <stdio.h>
 #include <binder/BinderService.h>
 #include <utils/Singleton.h>
@@ -44,7 +46,7 @@ class BnPowerManager : public BnInterface<IPowerManager>
 {
 public:
     virtual status_t onTransact(uint32_t code, const Parcel& data,
-        Parcel* reply, uint32_t flags = 0);
+				Parcel* reply, uint32_t flags = 0);
 };
 
 // Must be kept in sync with frameworks/base/services/powermanager/IPowerManager.cpp
@@ -81,12 +83,12 @@ class WakeLockClient
 public:
     WakeLockClient(int flags, const sp<IBinder>& client, const String16& tag, int uid, int pid)
     : mFlags(flags), mClient(client), mTag(tag), mUid(uid), mPid(pid) {
-        printf("Creating new WakeLockClient flags=%d tag=%s uid=%d pid=%d\n",
-            mFlags, String8(mTag).string(), mUid, mPid);
+        ALOGI("Creating new WakeLockClient flags=%d tag=%s uid=%d pid=%d\n",
+	      mFlags, String8(mTag).string(), mUid, mPid);
     }
     ~WakeLockClient() {
-        printf("Deleting WakeLockClient flags=%d uid=%d pid=%d tag=%s\n",
-            mFlags, mUid, mPid, String8(mTag).string());
+        ALOGI("Deleting WakeLockClient flags=%d uid=%d pid=%d tag=%s\n",
+	      mFlags, mUid, mPid, String8(mTag).string());
     }
     int          mFlags;
     sp<IBinder>  mClient;
@@ -117,8 +119,8 @@ public:
         // Here we may want to check permissions....someday...
         int64_t token = IPCThreadState::self()->clearCallingIdentity();
         {
-        Mutex::Autolock _l(mLock);
-        acquireWakeLockLocked(flags, lock, uid, pid, tag);
+	    Mutex::Autolock _l(mLock);
+	    acquireWakeLockLocked(flags, lock, uid, pid, tag);
         }
         IPCThreadState::self()->restoreCallingIdentity(token);
         return NO_ERROR;
@@ -134,8 +136,8 @@ public:
 
 private:
     void acquireWakeLockLocked(int flags, const sp<IBinder>& lock, int uid, int pid, const String16& tag) {
-        printf("acquireWakeLockLocked: flags=%d uid=%d pid=%d tag=%s\n",
-            flags, uid, pid, String8(tag).string());
+        ALOGI("acquireWakeLockLocked: flags=%d uid=%d pid=%d tag=%s\n",
+	      flags, uid, pid, String8(tag).string());
         ssize_t index = mClients.indexOfKey(lock);
         if (index < 0) {
             WakeLockClient *client = new WakeLockClient(flags, lock, tag, uid, pid);
@@ -148,7 +150,7 @@ private:
     }
 
     void releaseWakeLockLocked(const wp<IBinder>& lock, int flags, bool death) {
-        printf("releaseWakeLockLocked: flags=%d death=%d\n", flags, death);
+        ALOGI("releaseWakeLockLocked: flags=%d death=%d\n", flags, death);
         WakeLockClient *client = mClients.valueFor(lock);
         mClients.removeItem(lock);
         if (!client)
