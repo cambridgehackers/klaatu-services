@@ -20,7 +20,7 @@ void ScannedStations::update(const String8& data)
     for (size_t i = 1 ; i < lines.size() ; i++) {
 	Vector<String8> elements = splitString(lines[i], '\t');
 	if (elements.size() < 3 || elements.size() > 5) {
-	    LOGW("WifiStateMachine::handleScanResults() Illegal data: %s\n", 
+	    SLOGW("WifiStateMachine::handleScanResults() Illegal data: %s\n", 
 		 lines[i].string());
 	} else {
 	    int frequency = atoi(elements[1].string());

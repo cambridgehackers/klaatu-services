@@ -20,8 +20,6 @@ public:
     Vector<String8> command(const String8&, int *error_code = 0);
     virtual void    event(const String8&) = 0;  // Must override in subclass
 
-    static int extractCode(const char *buf);
-    static int extractCode(const String8& buf);
 protected:
     virtual bool threadLoop();
 
@@ -30,6 +28,7 @@ private:
     mutable Condition mCondition;
     int               mFd;
     Vector<String8>   mResponseQueue;
+    int               mSequenceNumber;
 };
 
 };  // namespace android

@@ -48,7 +48,7 @@ public:
     }
 };
 
-IMPLEMENT_META_INTERFACE(HeimdService, "klaatu.platform.IHeimdService")
+IMPLEMENT_META_INTERFACE(HeimdService, "nokia.platform.IHeimdService")
 
 // ----------------------------------------------------------------------------
 }; // namespace Android

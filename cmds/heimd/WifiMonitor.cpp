@@ -23,8 +23,9 @@ namespace android {
 
 const int BUF_SIZE=256;
 
-WifiMonitor::WifiMonitor(StateMachine *state_machine) 
+WifiMonitor::WifiMonitor(StateMachine *state_machine, const String8& interface) 
     : mStateMachine(state_machine) 
+    , mInterface(interface)
 {
 }
 
@@ -39,11 +40,11 @@ void WifiMonitor::startRunning()
     androidCreateThread(monitorThread, this);
 }
 
-static bool connectToSupplicant()
+static bool connectToSupplicant(const char *interface)
 {
     int i = 0;
     while (1) {
-	if (::wifi_connect_to_supplicant() ==0)
+	if (::wifi_connect_to_supplicant(interface) ==0)
 	    return true;
 	i++;
 	if (i > 5)
@@ -54,8 +55,8 @@ static bool connectToSupplicant()
 
 int WifiMonitor::monitorThreadFunction()
 {
-    LOGV("........#### Starting monitor thread ####\n");
-    if (connectToSupplicant()) 
+    SLOGV("........#### Starting monitor thread ####\n");
+    if (connectToSupplicant(mInterface.string())) 
 	mStateMachine->enqueue(WifiStateMachine::SUP_CONNECTION_EVENT);
     else {
 	mStateMachine->enqueue(WifiStateMachine::SUP_DISCONNECTION_EVENT);
@@ -64,9 +65,9 @@ int WifiMonitor::monitorThreadFunction()
 	
     while (1) {
 	char buf[BUF_SIZE];  // Will store a UTF string
-	int nread = ::wifi_wait_for_event(buf, BUF_SIZE);
+	int nread = ::wifi_wait_for_event(mInterface.string(), buf, BUF_SIZE);
 	if (nread > 0) {
-	    LOGV("##### %s\n", buf);
+	    SLOGV("##### %s\n", buf);
 	    if (strncmp(buf, "CTRL-EVENT-", 11) == 0) {
 		if (handleSupplicantEvent(buf + 11))
 		    return 0;
@@ -75,7 +76,7 @@ int WifiMonitor::monitorThreadFunction()
 		mStateMachine->enqueue(WifiStateMachine::AUTHENTICATION_FAILURE_EVENT);
 	    }
 	    else 
-		LOGV(".....Unprocessed supplicant event: %s\n", buf);
+		SLOGV(".....Unprocessed supplicant event: %s\n", buf);
 	}
     }
 
@@ -96,22 +97,22 @@ bool WifiMonitor::handleSupplicantEvent(const char *buf)
     else if (strncmp(buf, "SCAN-RESULTS ", 13) == 0)
 	mStateMachine->enqueue(WifiStateMachine::SUP_SCAN_RESULTS_EVENT);
     else if (strncmp(buf, "LINK-SPEED ", 11) == 0)
-	LOGV("....link-speed %s\n", buf + 11);
+	SLOGV("....link-speed %s\n", buf + 11);
     else if (strncmp(buf, "TERMINATING ", 12) == 0) {
-	LOGV("....terminating %s\n", buf + 12);
+	SLOGV("....terminating %s\n", buf + 12);
 	mStateMachine->enqueue(WifiStateMachine::SUP_DISCONNECTION_EVENT);
 	return true;
     }
     else if (strncmp(buf, "DRIVER-STATE ", 13) == 0)
-	LOGV("....driver-state %s\n", buf + 13);
+	SLOGV("....driver-state %s\n", buf + 13);
     else if (strncmp(buf, "EAP-FAILURE ", 12) == 0)
-	LOGV("....eap-failure %s\n", buf + 12);
+	SLOGV("....eap-failure %s\n", buf + 12);
     else if (strncmp(buf, "BSS-ADDED ", 10) == 0) {}
-    // LOGV(".....bss-added %s\n", buf + 10);
+    // SLOGV(".....bss-added %s\n", buf + 10);
     else if (strncmp(buf, "BSS-REMOVED ", 12) == 0) {}
-    // LOGV(".....bss-removed %s\n", buf + 12);
+    // SLOGV(".....bss-removed %s\n", buf + 12);
     else
-	LOGV(".....unrecognized CTRL-EVENT-%s\n", buf);
+	SLOGV(".....unrecognized CTRL-EVENT-%s\n", buf);
     return false;
 }
 
@@ -148,7 +149,7 @@ void WifiMonitor::handleConnected(const char *buf)
 {
     // We make a LOT of assumptions about the CONNECTED format
     if (strncmp(buf, "- Connection to ", 16) != 0) {
-	LOGV("......unrecognized connection command %s\n", buf);
+	SLOGV("......unrecognized connection command %s\n", buf);
 	return;
     }
 	
@@ -157,7 +158,7 @@ void WifiMonitor::handleConnected(const char *buf)
     while (*p != ' ' && *p != '\0')
 	p++;
     if (*p == '\0') {
-	LOGV("......unable to find termination of mac address %s\n", buf);
+	SLOGV("......unable to find termination of mac address %s\n", buf);
 	return;
     }
 
@@ -166,7 +167,7 @@ void WifiMonitor::handleConnected(const char *buf)
     while (*buf != '=' && *buf != '\0')
 	buf++;
     if (*buf == '\0') {
-	LOGV(".....unable to find id= in %s\n", buf);
+	SLOGV(".....unable to find id= in %s\n", buf);
 	return;
     }
 
@@ -174,7 +175,7 @@ void WifiMonitor::handleConnected(const char *buf)
     while (*p >= '0' && *p <= '9')
 	p++;
     if (*p != ' ') {  //Normally ends with a space
-	LOGV(".....unable to find termination of id in %s\n", buf);
+	SLOGV(".....unable to find termination of id in %s\n", buf);
 	return;
     }
 

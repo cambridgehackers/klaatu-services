@@ -82,7 +82,7 @@ static void callEnterChain(StateMachine *state_machine, State *parent, State *st
 {
     if (state && state != parent) {
 	callEnterChain(state_machine, parent, state->parent());
-	LOGV(".............Calling enter on %s\n", state->name());
+	SLOGV(".............Calling enter on %s\n", state->name());
 	state->enter(state_machine);
     }
 }
@@ -90,7 +90,7 @@ static void callEnterChain(StateMachine *state_machine, State *parent, State *st
 static void callExitChain(StateMachine *state_machine, State *parent, State *state)
 {
     while (state && state != parent) {
-	LOGV(".............Calling exit on %s\n", state->name());
+	SLOGV(".............Calling exit on %s\n", state->name());
 	state->exit(state_machine);
 	state = state->parent();
     }
@@ -102,7 +102,7 @@ bool StateMachine::threadLoop()
 	while (mTargetState != mCurrentState) {
 	    State *parent = findCommonParent(mTargetState, mCurrentState);
 	    if (mCurrentState) {
-		LOGV("......Exiting state %s\n", mCurrentState->name());
+		SLOGV("......Exiting state %s\n", mCurrentState->name());
 		callExitChain(this, parent, mCurrentState);
 	    }
 	    mCurrentState = mTargetState;
@@ -112,11 +112,11 @@ bool StateMachine::threadLoop()
 		mDeferedMessages.clear();
 	    }
 	    if (mCurrentState) {
-		LOGV("......Entering state %s\n", mCurrentState->name());
+		SLOGV("......Entering state %s\n", mCurrentState->name());
 		callEnterChain(this, parent, mCurrentState);
 	    }
 	    else {
-		LOGV("......Terminating state machine\n");
+		SLOGV("......Terminating state machine\n");
 		return false;
 	    }
 	}
@@ -142,7 +142,7 @@ bool StateMachine::threadLoop()
 	const char *msg_str = msgStr(message->command());
 
 	while (state && result == SM_NOT_HANDLED) {
-	    LOGV("......Processing message %s (%d) in state %s\n", 
+	    SLOGV("......Processing message %s (%d) in state %s\n", 
 		   (msg_str ? msg_str : "<UNKNOWN>"),
 		   message->command(), state->name());
 	    result = state->process(this, message);
@@ -154,13 +154,13 @@ bool StateMachine::threadLoop()
 	    delete message;
 	    break;
 	case SM_NOT_HANDLED:
-	    LOGV("Warning!  Message %s (%d) not handled by current state %p\n", 
+	    SLOGV("Warning!  Message %s (%d) not handled by current state %p\n", 
 		   (msg_str ? msg_str : "<UNKNOWN>"),
 		   message->command(), mCurrentState);
 	    delete message;
 	    break;
 	case SM_DEFER:
-	    LOGV(".......Message %s (%d) is being defered by current state\n",
+	    SLOGV(".......Message %s (%d) is being defered by current state\n",
  		   (msg_str ? msg_str : "<UNKNOWN>"), message->command());
 	    mDeferedMessages.push(message);
 	    break;
@@ -200,7 +200,7 @@ void StateMachine::transitionTo(int key)
     if (key == CMD_TERMINATE)
 	mTargetState = NULL;
     else if (mStateMap.indexOfKey(key) < 0)
-	LOGV("....ERROR: state %d doesn't have a value\n", key);
+	SLOGV("....ERROR: state %d doesn't have a value\n", key);
     else
 	mTargetState = mStateMap.valueFor(key);
 }

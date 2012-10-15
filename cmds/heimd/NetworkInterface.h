@@ -28,6 +28,7 @@ public:
     bool setInterfaceConfig(const InterfaceConfiguration& ifcfg);
     bool setInterfaceDown();
     bool setInterfaceUp();
+    void setDefaultRoute(const char *gateway);
     void setDns(const char *dns1, const char *dns2);
     void flushDnsCache();
     void clearInterfaceAddresses();

@@ -11,9 +11,13 @@
 
 namespace android {
 
-bool    doWifiCommand(const char *cmd, char *replybuf, int replybuflen);
-String8 doWifiStringCommand(const char *fmt, ...);
-bool    doWifiBooleanCommand(const char *expect, const char *fmt, ...);
+bool    doWifiCommand(const char *interface, const char *cmd, char *replybuf, int replybuflen);
+String8 doWifiStringCommand(const char *interface, const char *fmt, ...);
+bool    doWifiBooleanCommand(const char *interface, const char *expect, const char *fmt, ...);
+
+bool    doWifiCommand(const String8& interface, const char *cmd, char *replybuf, int replybuflen);
+String8 doWifiStringCommand(const String8& interface, const char *fmt, ...);
+bool    doWifiBooleanCommand(const String8& interface, const char *expect, const char *fmt, ...);
 
 };  // namespace android
 

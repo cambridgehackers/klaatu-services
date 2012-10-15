@@ -310,7 +310,7 @@ SigynService::SigynService()
 
     if (AudioSystem::setMasterMute(false) != NO_ERROR)
 	LOG_ALWAYS_FATAL("Unable to write master mute to false\n");
-    LOGV("Audio configured\n");
+    SLOGV("Audio configured\n");
     
     if (createThread(beginOutgoingThread, this) == false) 
 	LOG_ALWAYS_FATAL("ERROR!  Unable to create outgoing thread for RILD socket\n");
@@ -321,7 +321,7 @@ SigynService::SigynService()
 
 SigynService::~SigynService()
 {
-    LOGV("%s:%d  ~Sigynservice\n",__FILE__,__LINE__);
+    SLOGV("%s:%d  ~Sigynservice\n",__FILE__,__LINE__);
 }
 
 int SigynService::beginIncomingThread(void *cookie)
@@ -354,7 +354,7 @@ int SigynService::incomingThread()
 	int ret = read(mRILfd, &header, sizeof(header));
 
 	if (ret != sizeof(header)) {
-	    LOGW("Read %d bytes instead of %d\n", ret, sizeof(header));
+	    SLOGW("Read %d bytes instead of %d\n", ret, sizeof(header));
 	    perror("SigynService::incomingThread read on header");
 	    return ret;
 	}
@@ -368,19 +368,19 @@ int SigynService::incomingThread()
 	}
 
 	if (mDebug & DEBUG_INCOMING) {
-	    LOGV("<<<<<<< INCOMING <<<<<<<<<<\n");
+	    SLOGV("<<<<<<< INCOMING <<<<<<<<<<\n");
 	    const uint8_t *ptr = data.data();
 	    for (int i = 0 ; i < data_size ; i++ ) {
-		LOGV("%02x ", *ptr++);
+		SLOGV("%02x ", *ptr++);
 		if ((i+1) % 8 == 0 || (i+1 >= data_size))
-		    LOGV("\n");
+		    SLOGV("\n");
 	    }
-	    LOGV("<<<<<<<<<<<<<<<<<<<<<<<<<<<\n");
+	    SLOGV("<<<<<<<<<<<<<<<<<<<<<<<<<<<\n");
 	}
 
 	data.setDataPosition(0);
 	int type = data.readInt32();
-//	LOGV("New message received: %d bytes type=%s\n", data_size, 
+//	SLOGV("New message received: %d bytes type=%s\n", data_size, 
 //	       (type ==RESPONSE_SOLICITED ? "solicited" : "unsolicited"));
 
 	if (type == RESPONSE_UNSOLICITED) 
@@ -416,14 +416,14 @@ int SigynService::outgoingThread()
 	const Parcel& p(request->parcel());
 	// Send the item
 	if (mDebug & DEBUG_OUTGOING) {
-	    LOGV(">>>>>>> OUTGOING >>>>>>>>>>\n");
+	    SLOGV(">>>>>>> OUTGOING >>>>>>>>>>\n");
 	    const uint8_t *ptr = p.data();
 	    for (size_t i = 0 ; i < p.dataSize() ; i++ ) {
-		LOGV("%02x ", *ptr++);
+		SLOGV("%02x ", *ptr++);
 		if ((i+1) % 8 == 0 || (i+1 >= p.dataSize()))
-		    LOGV("\n");
+		    SLOGV("\n");
 	    }
-	    LOGV(">>>>>>>>>>>>>>>>>>>>>>>>>>>\n");
+	    SLOGV(">>>>>>>>>>>>>>>>>>>>>>>>>>>\n");
 	}
 
 	int header = htonl(p.dataSize());
@@ -443,7 +443,7 @@ int SigynService::outgoingThread()
 
 void SigynService::binderDied(const wp<IBinder>& who)
 {
-    LOGV("binderDied\n");
+    SLOGV("binderDied\n");
     Mutex::Autolock _l(mLock);
     mClients.removeItem(who);
     // ### TODO: Remove all messages from the outgoing queue
@@ -488,13 +488,13 @@ void SigynService::receiveUnsolicited(const Parcel& data)
     String16 svalue;
     UnsolicitedMessages flags = UM_NONE;
 
-    LOGD("<<< Unsolicited message=%s [%d]\n", rilMessageStr(message), message);
+    SLOGD("<<< Unsolicited message=%s [%d]\n", rilMessageStr(message), message);
 
     switch (message) {
     case RIL_UNSOL_RESPONSE_RADIO_STATE_CHANGED: 
 	ivalue = data.readInt32(); 
 	flags = UM_RADIO_STATE_CHANGED;
-	LOGD("    RIL Radio state changed to %d\n", ivalue);
+	SLOGD("    RIL Radio state changed to %d\n", ivalue);
 	if (ivalue == RADIO_STATE_OFF) {
 	    RILRequest * request = RILRequest::create(RIL_REQUEST_RADIO_POWER);
 	    request->writeInt(1);  // One value
@@ -506,13 +506,13 @@ void SigynService::receiveUnsolicited(const Parcel& data)
     case RIL_UNSOL_RESPONSE_CALL_STATE_CHANGED:
 	flags = UM_CALL_STATE_CHANGED;
 	// Invoke RIL_REQUEST_GET_CURRENT_CALLS
-	LOGD("    Call state changed\n");
+	SLOGD("    Call state changed\n");
 	sendToRILD(RILRequest::create(RIL_REQUEST_GET_CURRENT_CALLS));
 	break;
 
     case RIL_UNSOL_RESPONSE_VOICE_NETWORK_STATE_CHANGED:
 	flags = UM_VOICE_NETWORK_STATE_CHANGED;
-	LOGD("    Voice network state changed\n");
+	SLOGD("    Voice network state changed\n");
 	break;
 
     case RIL_UNSOL_NITZ_TIME_RECEIVED:
@@ -523,17 +523,17 @@ void SigynService::receiveUnsolicited(const Parcel& data)
     case RIL_UNSOL_SIGNAL_STRENGTH:
 	ivalue = data.readInt32();
 	flags = UM_SIGNAL_STRENGTH;
-	LOGD("     Signal strength changed %d\n", ivalue);
+	SLOGD("     Signal strength changed %d\n", ivalue);
 	break;
 
     case RIL_UNSOL_RIL_CONNECTED: {
 	int n = data.readInt32();  // Number of integers
 	ivalue = data.readInt32();  // RIL Version
-	LOGD("    RIL connected version=%d\n", ivalue);
+	SLOGD("    RIL connected version=%d\n", ivalue);
     } break;
 
     default:
-	LOGD("### Unhandled unsolicited message received from RIL: %d\n", message);
+	SLOGD("### Unhandled unsolicited message received from RIL: %d\n", message);
 	break;
     }
 
@@ -550,9 +550,9 @@ void SigynService::receiveUnsolicited(const Parcel& data)
 void SigynService::updateAudioMode(audio_mode_t mode)
 {
     if (mode != mAudioMode) {
-	LOGV("######### Updating the audio mode from %d to %d #############\n", mAudioMode, mode);
+	SLOGV("######### Updating the audio mode from %d to %d #############\n", mAudioMode, mode);
 	if (AudioSystem::setMode(mode) != NO_ERROR)
-	    LOGW("Unable to set the audio mode\n");
+	    SLOGW("Unable to set the audio mode\n");
 	mAudioMode = mode;
     }
 }
@@ -573,11 +573,11 @@ void SigynService::receiveSolicited(const Parcel& data)
     RILRequest *request = getPending(serial);
 
     if (!request) {
-	LOGW("receiveSolicited: not requested serial=%d result=%d\n", serial, result);
+	SLOGW("receiveSolicited: not requested serial=%d result=%d\n", serial, result);
 	return;
     }
 
-    LOGV("<<< Solicited message=%s [%d] serial=%d result=%d\n", rilMessageStr(request->message()), 
+    SLOGV("<<< Solicited message=%s [%d] serial=%d result=%d\n", rilMessageStr(request->message()), 
 	   request->message(), serial, result);
 
     int token   = request->token();
@@ -608,7 +608,7 @@ void SigynService::receiveSolicited(const Parcel& data)
 		audio_mode = AUDIO_MODE_IN_CALL;
 	}
 	
-	LOGV("    %d calls, audio_mode=%d\n", ivalue, audio_mode);
+	SLOGV("    %d calls, audio_mode=%d\n", ivalue, audio_mode);
 	updateAudioMode(audio_mode);
     }	break;
 
@@ -643,17 +643,17 @@ void SigynService::receiveSolicited(const Parcel& data)
     } break;
 
     case RIL_REQUEST_RADIO_POWER:
-	LOGV("    RIL Radio Power\n");
+	SLOGV("    RIL Radio Power\n");
 	// No response....
 	break;
 
     default:
-	LOGV("Unhandled RIL request %d\n", message);
+	SLOGV("Unhandled RIL request %d\n", message);
 	break;
     }
 
     if (request->client() != NULL) {
-	LOGV("    Passing solicited message to client token=%d message=%d result=%d ivalue=%d...\n",
+	SLOGV("    Passing solicited message to client token=%d message=%d result=%d ivalue=%d...\n",
 	       token, message, result, ivalue);
 	request->client()->Response( token, message, result, ivalue, extra );
     }
@@ -671,12 +671,12 @@ SigynServerClient * SigynService::getClient(const sp<ISigynClient>& client)
     if (index >= 0)
 	return mClients.valueAt(index);
 
-    LOGV(".....creating new SigynServerClient....\n");
+    SLOGV(".....creating new SigynServerClient....\n");
     SigynServerClient *sigyn_client = new SigynServerClient(client,UM_NONE);
     mClients.add(client->asBinder(),sigyn_client);
     status_t err = client->asBinder()->linkToDeath(this, NULL, 0);
     if (err)
-	LOGW("SigynService::Register linkToDeath failed %d\n", err);
+	SLOGW("SigynService::Register linkToDeath failed %d\n", err);
     return sigyn_client;
 }
 
@@ -684,7 +684,7 @@ SigynServerClient * SigynService::getClient(const sp<ISigynClient>& client)
 
 void SigynService::Register(const sp<ISigynClient>& client, UnsolicitedMessages flags)
 {
-    LOGV("Client register flags=%0x\n", flags);
+    SLOGV("Client register flags=%0x\n", flags);
 
     Mutex::Autolock _l(mLock);
     getClient(client)->flags = flags;
@@ -692,7 +692,7 @@ void SigynService::Register(const sp<ISigynClient>& client, UnsolicitedMessages 
 
 void SigynService::Request(const sp<ISigynClient>& client, int token, int message, int ivalue, const String16& svalue) 
 {
-    LOGV("Client request: token=%d message=%d ivalue=%d\n", token, message, ivalue);
+    SLOGV("Client request: token=%d message=%d ivalue=%d\n", token, message, ivalue);
 
     // Add the client if it doesn't exist
     {
@@ -729,7 +729,7 @@ void SigynService::Request(const sp<ISigynClient>& client, int token, int messag
     case RIL_REQUEST_GET_MUTE:                 break;
 
     default:
-	LOGW("Unrecognized request %d\n", message);
+	SLOGW("Unrecognized request %d\n", message);
 	// ### TODO:  Put in an error code here and send the message back
 	break;
     }

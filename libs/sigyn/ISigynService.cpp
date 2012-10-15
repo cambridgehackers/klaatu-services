@@ -37,7 +37,7 @@ public:
     }
 };
 
-IMPLEMENT_META_INTERFACE(SigynService, "klaatu.platform.ISigynService")
+IMPLEMENT_META_INTERFACE(SigynService, "nokia.platform.ISigynService")
 
 // ----------------------------------------------------------------------------
 }; // namespace Android

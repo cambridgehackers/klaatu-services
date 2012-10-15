@@ -121,7 +121,7 @@ public:
 	    wsm->enableBackgroundScan(message->arg1() != 0);
 	    break;
 	default:
-	    LOGD("...ERROR - unhandled message %s (%d)\n", 
+	    SLOGD("...ERROR - unhandled message %s (%d)\n", 
 		 sMessageToString[message->command()], message->command());
 	    break;
 	}
@@ -197,13 +197,11 @@ public:
 	case WifiStateMachine::CMD_START_SUPPLICANT:
 	    wsm->networkInterface()->wifiFirmwareReload("STA");
 	    wsm->networkInterface()->setInterfaceDown();
-	    if (::wifi_start_supplicant() == 0) {
-		LOGV("#################### STARTING SUPPLICANT : SUCCEEDED ######################\n");
+	    if (::wifi_start_supplicant(0) == 0) {
 		wsm->monitor()->startRunning();
 		stateMachine->transitionTo(SUPPLICANT_STARTING_STATE);
 	    }
 	    else {
-		LOGV("#################### STARTING SUPPLICANT : FAILED ######################\n");
 		stateMachine->transitionTo(DRIVER_UNLOADING_STATE);
 	    }
 	    return SM_HANDLED;
@@ -284,12 +282,12 @@ public:
 	    
 	case WifiStateMachine::SUP_DISCONNECTION_EVENT:
 	    if (wsm->checkSupplicantRestartCount()) {
-		LOGD("Restarting supplicant\n");
+		SLOGD("Restarting supplicant\n");
 		::wifi_stop_supplicant();
 		stateMachine->enqueueDelayed(WifiStateMachine::CMD_START_SUPPLICANT, 
 					     SUPPLICANT_RESTART_INTERVAL_MSECS);
 	    } else {
-		LOGD("Failed to start supplicant; unloading driver\n");
+		SLOGD("Failed to start supplicant; unloading driver\n");
 		wsm->clearSupplicantRestartCount();
 		stateMachine->enqueue(WifiStateMachine::CMD_UNLOAD_DRIVER);
 	    }
@@ -324,9 +322,9 @@ class SupplicantStartedState : public State {
 	    stateMachine->transitionTo(SUPPLICANT_STOPPING_STATE);
 	    return SM_HANDLED;
 	case WifiStateMachine::SUP_DISCONNECTION_EVENT:
-	    LOGD("Connection lost, restarting supplicant\n");
+	    SLOGD("Connection lost, restarting supplicant\n");
 	    ::wifi_stop_supplicant();
-	    ::wifi_close_supplicant_connection();
+	    ::wifi_close_supplicant_connection(wsm->interface().string());
 	    // mNetworkInfo.setIsAvailable(false);
 	    wsm->handleNetworkDisconnect();
 	    // sendSupplicantConnectionChangedBroadcast(false);
@@ -337,8 +335,7 @@ class SupplicantStartedState : public State {
 					 SUPPLICANT_RESTART_INTERVAL_MSECS);
 	    return SM_HANDLED;
 	case WifiStateMachine::SUP_SCAN_RESULTS_EVENT: {
-	    LOGV("...extracting scan results from supplicant\n");
-	    String8 networks = doWifiStringCommand("SCAN_RESULTS");
+	    String8 networks = doWifiStringCommand(wsm->interface(), "SCAN_RESULTS");
 	    wsm->handleScanData(networks);
 	} return SM_HANDLED;
 	case WifiStateMachine::CMD_ADD_OR_UPDATE_NETWORK: {
@@ -373,9 +370,9 @@ public:
     void enter(StateMachine *stateMachine) {
 	WifiStateMachine *wsm = static_cast<WifiStateMachine *>(stateMachine);
 	wsm->setState(WS_DISABLING);
-	LOGD("########### Asking supplicant to terminate\n");
-	if (!doWifiBooleanCommand("OK", "TERMINATE")) {
-	    LOGW("########## Supplicant not stopping nicely; killing\n");
+	SLOGD("########### Asking supplicant to terminate\n");
+	if (!doWifiBooleanCommand(wsm->interface(), "OK", "TERMINATE")) {
+	    SLOGW("########## Supplicant not stopping nicely; killing\n");
 	    ::wifi_stop_supplicant();
 	}
 	stateMachine->transitionTo(DRIVER_LOADED_STATE);
@@ -394,17 +391,18 @@ public:
 class DriverStartedState : public State {
 public:
     void enter(StateMachine *stateMachine) {
-	LOGV(".........driver started state enter....\n");
+	SLOGV(".........driver started state enter....\n");
 	// Set country code if available
 	// setFrequencyBand();
 //	setNetworkDetailedState(DISCONNECTED);
-	if (static_cast<WifiStateMachine *>(stateMachine)->isScanMode()) {
-	    doWifiBooleanCommand("OK", "AP_SCAN 2");  // SCAN_ONLY_MODE
-	    doWifiBooleanCommand("OK", "DISCONNECT");
+	WifiStateMachine *wsm = static_cast<WifiStateMachine *>(stateMachine);
+	if (wsm->isScanMode()) {
+	    doWifiBooleanCommand(wsm->interface(), "OK", "AP_SCAN 2");  // SCAN_ONLY_MODE
+	    doWifiBooleanCommand(wsm->interface(), "OK", "DISCONNECT");
 	    stateMachine->transitionTo(SCAN_MODE_STATE);
 	} else {
-	    doWifiBooleanCommand("OK", "AP_SCAN 1");  // CONNECT_MODE
-	    doWifiBooleanCommand("OK", "RECONNECT");
+	    doWifiBooleanCommand(wsm->interface(), "OK", "AP_SCAN 1");  // CONNECT_MODE
+	    doWifiBooleanCommand(wsm->interface(), "OK", "RECONNECT");
 	    stateMachine->transitionTo(DISCONNECTED_STATE);
 	}
     }
@@ -414,10 +412,10 @@ public:
 	case WifiStateMachine::CMD_START_SCAN: {
 	    bool force_active = (message->arg1() != 0);
 	    if (force_active) 
-		doWifiBooleanCommand("OK", "DRIVER SCAN-ACTIVE");
-	    doWifiBooleanCommand("OK", "SCAN");
+		doWifiBooleanCommand(wsm->interface(), "OK", "DRIVER SCAN-ACTIVE");
+	    doWifiBooleanCommand(wsm->interface(), "OK", "SCAN");
 	    if (force_active)
-		doWifiBooleanCommand("OK", "DRIVER SCAN-PASSIVE");
+		doWifiBooleanCommand(wsm->interface(), "OK", "DRIVER SCAN-PASSIVE");
 	    wsm->setScanResultIsPending(true);
 	    return SM_HANDLED;
 	} break;
@@ -518,29 +516,29 @@ public:
 	WifiStateMachine *wsm = static_cast<WifiStateMachine *>(stateMachine);
 	switch (message->command()) {
 	case WifiStateMachine::AUTHENTICATION_FAILURE_EVENT:
-	    LOGV("TODO: Authentication failure\n");
+	    SLOGV("TODO: Authentication failure\n");
 	    return SM_HANDLED;
 	case WifiStateMachine::SUP_STATE_CHANGE_EVENT:
-	    LOGV("...ConnectMode: Supplicant state change event\n");
+	    SLOGV("...ConnectMode: Supplicant state change event\n");
 	    wsm->handleSupplicantStateChange(message);
 	    return SM_HANDLED;
 	case WifiStateMachine::CMD_DISCONNECT:
-	    doWifiBooleanCommand("OK", "DISCONNECT");
+	    doWifiBooleanCommand(wsm->interface(), "OK", "DISCONNECT");
 	    return SM_HANDLED;
 	case WifiStateMachine::CMD_RECONNECT:
-	    doWifiBooleanCommand("OK", "RECONNECT");
+	    doWifiBooleanCommand(wsm->interface(), "OK", "RECONNECT");
 	    return SM_HANDLED;
 	case WifiStateMachine::CMD_REASSOCIATE:
-	    doWifiBooleanCommand("OK", "REASSOCIATE");
+	    doWifiBooleanCommand(wsm->interface(), "OK", "REASSOCIATE");
 	    return SM_HANDLED;
 	case WifiStateMachine::CMD_CONNECT_NETWORK: {
 	    int network_id = message->arg1();
-	    LOGV("TODO: WifiConfigStore.selectNetwork(network_id=%d);\n", network_id);
+	    SLOGV("TODO: WifiConfigStore.selectNetwork(network_id=%d);\n", network_id);
 	} return SM_HANDLED;
 	case WifiStateMachine::SUP_SCAN_RESULTS_EVENT:
 	    // Go back to "connect" mode
-	    LOGV(".....Switching back to CONNECT_MODE\n");
-	    doWifiBooleanCommand("OK", "AP_SCAN 1");  // CONNECT_MODE
+	    SLOGV(".....Switching back to CONNECT_MODE\n");
+	    doWifiBooleanCommand(wsm->interface(), "OK", "AP_SCAN 1");  // CONNECT_MODE
 	    return SM_NOT_HANDLED;
 	case WifiStateMachine::NETWORK_CONNECTION_EVENT: {
 	    wsm->handleNetworkConnect(message);
@@ -589,13 +587,13 @@ public:
 	WifiStateMachine *wsm = static_cast<WifiStateMachine *>(stateMachine);
 	switch (message->command()) {
 	case WifiStateMachine::CMD_DISCONNECT:
-	    doWifiBooleanCommand("OK", "DISCONNECT");
+	    doWifiBooleanCommand(wsm->interface(), "OK", "DISCONNECT");
 	    stateMachine->transitionTo(DISCONNECTING_STATE);
 	    return SM_HANDLED;
 
 	case WifiStateMachine::CMD_START_SCAN:
 	    // Put the network briefly into scan-only mode
-	    doWifiBooleanCommand("OK", "AP_SCAN 2");   // SCAN_ONLY_MODE
+	    doWifiBooleanCommand(wsm->interface(), "OK", "AP_SCAN 2");   // SCAN_ONLY_MODE
 	    return SM_NOT_HANDLED;
 
 	case WifiStateMachine::CMD_RSSI_POLL:
@@ -619,7 +617,7 @@ public:
     void exit(StateMachine *stateMachine) {
 	WifiStateMachine *wsm = static_cast<WifiStateMachine *>(stateMachine);
 	if (wsm->scanResultIsPending())
-	    doWifiBooleanCommand("OK", "AP_SCAN 1");  // CONNECT_MODE
+	    doWifiBooleanCommand(wsm->interface(), "OK", "AP_SCAN 1");  // CONNECT_MODE
     }
 };
 
@@ -641,7 +639,7 @@ class DisconnectedState : public State {
 	WifiStateMachine *wsm = static_cast<WifiStateMachine *>(stateMachine);
 	if (wsm->backgroundScan()) {
 	    if (!wsm->scanResultIsPending())
-		doWifiBooleanCommand("OK", "DRIVER BGSCAN-START");
+		doWifiBooleanCommand(wsm->interface(), "OK", "DRIVER BGSCAN-START");
 	}
     }
 
@@ -651,21 +649,21 @@ class DisconnectedState : public State {
 	case WifiStateMachine::CMD_START_SCAN:
 	    /* Disable background scan temporarily during a regular scan */
 	    if (wsm->backgroundScan())
-		doWifiBooleanCommand("OK", "DRIVER BGSCAN-STOP");
+		doWifiBooleanCommand(wsm->interface(), "OK", "DRIVER BGSCAN-STOP");
 	    return SM_NOT_HANDLED;  // Handle in parent state
 
 	case WifiStateMachine::CMD_ENABLE_BACKGROUND_SCAN:
 	    wsm->enableBackgroundScan(message->arg1() != 0);
 	    if (wsm->backgroundScan())
-		doWifiBooleanCommand("OK", "DRIVER BGSCAN-START");
+		doWifiBooleanCommand(wsm->interface(), "OK", "DRIVER BGSCAN-START");
 	    else
-		doWifiBooleanCommand("OK", "DRIVER BGSCAN-STOP");
+		doWifiBooleanCommand(wsm->interface(), "OK", "DRIVER BGSCAN-STOP");
 	    return SM_HANDLED;
 
 	case WifiStateMachine::SUP_SCAN_RESULTS_EVENT:
 	    /* Re-enable background scan when a pending scan result is received */
 	    if (wsm->backgroundScan() && wsm->scanResultIsPending())
-		doWifiBooleanCommand("OK", "DRIVER BGSCAN-START");
+		doWifiBooleanCommand(wsm->interface(), "OK", "DRIVER BGSCAN-START");
 	    return SM_NOT_HANDLED;  // Handle in parent state
 	}
 	return SM_NOT_HANDLED;
@@ -674,7 +672,7 @@ class DisconnectedState : public State {
     void exit(StateMachine *stateMachine) {
 	WifiStateMachine *wsm = static_cast<WifiStateMachine *>(stateMachine);
 	if (wsm->backgroundScan())
-	    doWifiBooleanCommand("OK", "DRIVER BGSCAN-STOP");
+	    doWifiBooleanCommand(wsm->interface(), "OK", "DRIVER BGSCAN-STOP");
     }
 };
 
@@ -689,15 +687,15 @@ WifiStateMachine::WifiStateMachine(const char *interface)
     , mScanResultIsPending(false)
     , mState(WS_DISABLED)
 {
-    mWifiMonitor      = new WifiMonitor(this);
-    mWifiConfigStore  = new WifiConfigStore;
+    mWifiMonitor      = new WifiMonitor(this, mInterface);
+    mWifiConfigStore  = new WifiConfigStore(mInterface);
     mNetworkInterface = new NetworkInterface(this, mInterface);
     mScannedStations  = new ScannedStations;
     mDhcpStateMachine = new DhcpStateMachine(this, mInterface);
 
     // Ensure we've terminated DHCP and the wpa_supplicant
     // The DHCP state machine ensures that the old dhcp is stopped
-    LOGV("Stopping supplicant, result=%d\n", ::wifi_stop_supplicant());
+    SLOGV("Stopping supplicant, result=%d\n", ::wifi_stop_supplicant());
 
     DefaultState *default_state = new DefaultState;
     DriverUnloadedState *unloaded_state = new DriverUnloadedState;
@@ -733,7 +731,7 @@ void WifiStateMachine::startRunning()
 {
     mNetworkInterface->startRunning();
 
-    LOGV("...................WifiStateMachine::startRunning()\n");
+    SLOGV("...................WifiStateMachine::startRunning()\n");
     status_t result = run("WifiStateMachine", PRIORITY_NORMAL);
     LOG_ALWAYS_FATAL_IF(result, "Could not start WifiStateMachine thread due to error %d\n", result);
 }
@@ -781,9 +779,9 @@ void WifiStateMachine::handleSupplicantConnection()
     setState(WS_ENABLED);
 
     // Returns data = 'Macaddr = XX:XX:XX:XX:XX:XX'
-    String8 data = doWifiStringCommand("DRIVER MACADDR");
+    String8 data = doWifiStringCommand(mInterface, "DRIVER MACADDR");
     if (strncmp("Macaddr = ", data.string(), 10)) {
-	LOGW("Unable to retrieve MAC address in wireless driver\n");
+	SLOGW("Unable to retrieve MAC address in wireless driver\n");
     } else {
 	Mutex::Autolock _l(mReadLock);
 	mWifiInformation.macaddr = String8(data.string() + 10);
@@ -797,7 +795,7 @@ void WifiStateMachine::handleSupplicantConnection()
 
 int WifiStateMachine::handleSupplicantStateChange(Message *message)
 {
-//    LOGV("....TODO: handleSupplicantStatechange\n");
+//    SLOGV("....TODO: handleSupplicantStatechange\n");
     int network_id = message->arg1();
     int sup_state  = message->arg2();
     String8 bssid = message->string();
@@ -818,7 +816,7 @@ int WifiStateMachine::handleSupplicantStateChange(Message *message)
 
 void WifiStateMachine::handleNetworkConnect(Message *message)
 {
-    LOGV("....handleNetworkConnect(%p)\n", message);
+    SLOGV("....handleNetworkConnect(%p)\n", message);
     mDhcpStateMachine->enqueue(DhcpStateMachine::CMD_START_DHCP);
 
     int network_id = message->arg1();
@@ -827,8 +825,8 @@ void WifiStateMachine::handleNetworkConnect(Message *message)
     Mutex::Autolock _l(mReadLock);
     mWifiInformation.bssid = bssid;
     mWifiInformation.network_id = network_id;
-    String8 status = doWifiStringCommand("STATUS");
-    LOGV("....checking status '%s'\n", status.string());
+    String8 status = doWifiStringCommand(mInterface, "STATUS");
+    SLOGV("....checking status '%s'\n", status.string());
     Vector<String8> lines = splitString(status, '\n');
     for (size_t i=0 ; i < lines.size() ; i++) {
 	Vector<String8> pair = splitString(lines[i], '=');
@@ -843,7 +841,7 @@ void WifiStateMachine::handleNetworkConnect(Message *message)
 
 void WifiStateMachine::handleNetworkDisconnect()
 {
-    LOGV("....handleNetworkDisconnect(): Stop DHCP and clear IP\n");
+    SLOGV("....handleNetworkDisconnect(): Stop DHCP and clear IP\n");
     mDhcpStateMachine->enqueue(DhcpStateMachine::CMD_STOP_DHCP);
     mNetworkInterface->clearInterfaceAddresses();
 
@@ -879,9 +877,11 @@ static bool fixDnsEntry(const char *key, const char *value)
 
 void WifiStateMachine::handleSuccessfulIpConfiguration(const DhcpSuccessMessage *message)
 {
-    LOGV("Got DHCP ipaddr=%s gateway=%s dns1=%s dns2=%s server=%s\n", 
+    SLOGV("Got DHCP ipaddr=%s gateway=%s dns1=%s dns2=%s server=%s\n", 
 	 message->ipaddr.string(), message->gateway.string(), message->dns1.string(), 
 	 message->dns2.string(), message->server.string());
+    // Set a default route
+    mNetworkInterface->setDefaultRoute(message->gateway.string());
     // Update property system with DNS data for the resolver
     if (fixDnsEntry("net.dns1", message->dns1.string()) 
 	|| fixDnsEntry("net.dns2", message->dns2.string())) {
@@ -908,7 +908,7 @@ void WifiStateMachine::handleScanData(const String8& data)
 
 void WifiStateMachine::handleRemoveNetwork(int network_id) 
 {
-    LOGV("REMOVING NETWORK %d\n", network_id);
+    SLOGV("REMOVING NETWORK %d\n", network_id);
     Mutex::Autolock _l(mReadLock);
     mWifiConfigStore->removeNetwork(network_id);
     HeimdService::getInstance().BroadcastConfiguredStations(mWifiConfigStore->stationList());
@@ -956,7 +956,7 @@ void WifiStateMachine::enableBackgroundScan(bool enable)
 
 void WifiStateMachine::fetchRssiAndLinkSpeedNative()
 {
-    String8 poll = doWifiStringCommand("SIGNAL_POLL");
+    String8 poll = doWifiStringCommand(mInterface, "SIGNAL_POLL");
     Vector<String8> elements = splitString(poll, '\n');
     int rssi = -1;
     int link_speed = -1;

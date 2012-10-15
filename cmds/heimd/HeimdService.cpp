@@ -60,7 +60,7 @@ HeimdServerClient * HeimdService::getClientLocked(const sp<IHeimdClient>& client
     HeimdServerClient *heimd_client = new HeimdServerClient(client);
     mClients.add(client->asBinder(),heimd_client);
     status_t err = client->asBinder()->linkToDeath(this, NULL, 0);
-    LOGW_IF(err, "HeimdService::Register linkToDeath failed %d\n", err);
+    SLOGW_IF(err, "HeimdService::Register linkToDeath failed %d\n", err);
     // printf(".....creating new HeimdServerClient %p (size=%d)....\n", this, mClients.size());
     return heimd_client;
 }
@@ -71,7 +71,7 @@ void HeimdService::Register(const sp<IHeimdClient>& client, HeimdClientFlag flag
     Mutex::Autolock _l(mLock);
     getClientLocked(client)->flags = flags;
 
-    LOGV("^^^^^^^ REGISTER CLIENT %p flags=%u ^^^^^^\n", client.get(), flags);
+    SLOGV("^^^^^^^ REGISTER CLIENT %p flags=%u ^^^^^^\n", client.get(), flags);
 
     if (flags & HEIMD_CLIENT_FLAG_STATE)
 	client->State(mWifiStateMachine->state());

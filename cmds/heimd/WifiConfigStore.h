@@ -8,12 +8,13 @@
 
 #include <heimd/IHeimdClient.h>
 #include <binder/Parcel.h>
+#include <utils/String8.h>
 
 namespace android {
 
 class WifiConfigStore {
 public:
-    WifiConfigStore() {}
+    WifiConfigStore(const String8& interface) : mInterface(interface) {}
 
     void initialize();
     void loadConfiguredNetworks();
@@ -37,6 +38,7 @@ private:
 
 private:
     Vector<ConfiguredStation>  mStations;
+    String8                    mInterface;
 };
 
 };  // namespace android

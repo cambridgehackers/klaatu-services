@@ -7,13 +7,15 @@
 #ifndef _WIFI_MONITOR_H
 #define _WIFI_MONITOR_H
 
+#include <utils/String8.h>
+
 namespace android {
 
 class StateMachine;
 
 class WifiMonitor {
 public:
-    WifiMonitor(StateMachine *);
+    WifiMonitor(StateMachine *, const String8& interface);
     void startRunning();
     int monitorThreadFunction();
 
@@ -24,6 +26,7 @@ private:
 
 private:
     StateMachine *mStateMachine;
+    String8       mInterface;
 };
 
 };  // namespace android

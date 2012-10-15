@@ -31,10 +31,10 @@ public:
 	DhcpStateMachine *dsm = static_cast<DhcpStateMachine *>(stateMachine);
 	switch (message->command()) {
 	case DhcpStateMachine::CMD_RENEW_DHCP:
-	    LOGE("Failed to handle DHCP renewal");
+	    SLOGE("Failed to handle DHCP renewal");
 	    break;
 	default:
-	    LOGD("...ERROR - unhandled message %s (%d)\n", 
+	    SLOGD("...ERROR - unhandled message %s (%d)\n", 
 		 sMessageToString[message->command()], message->command());
 	    break;
 	}
@@ -113,16 +113,17 @@ bool DhcpStateMachine::runDhcp(bool renew)
     char     dns1[PROPERTY_VALUE_MAX];
     char     dns2[PROPERTY_VALUE_MAX];
     char     server[PROPERTY_VALUE_MAX];
+    char     vendorInfo[PROPERTY_VALUE_MAX];
     uint32_t lease;
 
-    int result = ::dhcp_do_request(mInterface, ipaddr, gateway, &prefixLength,
-				   dns1, dns2, server, &lease);
+    int result = ::dhcp_do_request(mInterface.string(), ipaddr, gateway, &prefixLength,
+				   dns1, dns2, server, &lease, vendorInfo);
     if (result != 0) {
-	LOGD("...failed to acquire DHCP lease: %d\n", result);
+	SLOGD("...failed to acquire DHCP lease: %d\n", result);
 	mWifiStateMachine->enqueue(WifiStateMachine::DHCP_FAILURE);
     }
     else {
-	LOGD("...acquired DHCP lease: %d\n", result);
+	SLOGD("...acquired DHCP lease: %d\n", result);
 	mWifiStateMachine->enqueue(new DhcpSuccessMessage(ipaddr, gateway, dns1, dns2, server));
     }
 
