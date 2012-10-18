@@ -103,7 +103,7 @@ void SigynClient::Register(UnsolicitedMessages flags)
 void SigynClient::onFirstRef()
 {
     sp<IServiceManager> sm     = defaultServiceManager();
-    sp<IBinder>         binder = sm->getService(String16("sigyn"));
+    sp<IBinder>         binder = sm->getService(String16("phone"));
 
     if (!binder.get()) {
 	fprintf(stderr, "Unable to connect to sigyn service\n");

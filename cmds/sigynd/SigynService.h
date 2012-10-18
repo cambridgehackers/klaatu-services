@@ -25,7 +25,7 @@ class SigynService : public BinderService<SigynService>,
 
 public:
     // for SigynService
-    static const char *getServiceName() { return "sigyn"; }
+    static const char *getServiceName() { return "phone"; }
 
     SigynService();
     virtual ~SigynService();
