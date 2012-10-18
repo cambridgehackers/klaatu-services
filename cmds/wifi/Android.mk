@@ -15,16 +15,16 @@ LOCAL_SRC_FILES:= \
 	DhcpStateMachine.cpp \
 	WifiStateMachine.cpp
 
-LOCAL_MODULE:= klaatuwifi
+LOCAL_MODULE:= klaatu_wifiservice
 LOCAL_MODULE_TAGS:=optional
 
 LOCAL_C_INCLUDES += $(LOCAL_PATH)/../../include
-LOCAL_SHARED_LIBRARIES := libcutils libbinder libutils libklaatuwifi libhardware libhardware_legacy libnetutils
+LOCAL_SHARED_LIBRARIES := libcutils libbinder libutils libklaatu_wifi libhardware libhardware_legacy libnetutils
 
 include $(BUILD_EXECUTABLE)
 
 # Normally optional modules are not installed unless they show
 # up in the PRODUCT_PACKAGES list
 
-ALL_DEFAULT_INSTALLED_MODULES += $(TARGET_OUT)/bin/klaatuwifi
+ALL_DEFAULT_INSTALLED_MODULES += $(TARGET_OUT)/bin/klaatu_wifiservice
 
