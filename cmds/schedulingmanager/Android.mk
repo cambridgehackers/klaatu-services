@@ -9,5 +9,5 @@ LOCAL_C_INCLUDES := frameworks/av/services/audioflinger
 LOCAL_SHARED_LIBRARIES := libcutils libbinder libutils
 LOCAL_STATIC_LIBRARIES := libscheduling_policy
 
-ALL_DEFAULT_INSTALLED_MODULES += $(TARGET_OUT)/bin/schedulingmanager
+ALL_DEFAULT_INSTALLED_MODULES += $(TARGET_OUT)/bin/klaatu_schedulingmanager
 include $(BUILD_EXECUTABLE)
