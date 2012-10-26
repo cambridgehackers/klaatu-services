@@ -4,7 +4,7 @@ ifneq ($(PLATFORM_VERSION),2.3.6)
 LOCAL_PATH:= $(call my-dir)
 include $(CLEAR_VARS)
 
-LOCAL_MODULE:= powermanager
+LOCAL_MODULE:= klaatu_powermanager
 LOCAL_SRC_FILES:= powermanager_main.cpp
 LOCAL_MODULE_TAGS:= optional
 LOCAL_C_INCLUDES += $(LOCAL_PATH)/../../include
