@@ -26,52 +26,37 @@ namespace android {
 static const int BUF_SIZE=256;
 static const int RSSI_POLL_INTERVAL_MSECS = 3000;
 static const int SUPPLICANT_RESTART_INTERVAL_MSECS = 5000;
+
+/* message class to carry DHCP results */
+class DhcpSuccessMessage : public Message {
+public:
+    DhcpSuccessMessage(const char *in_ipaddr, const char *in_gateway,
+               const char *in_dns1, const char *in_dns2, const char *in_server)
+    : Message(DHCP_SUCCESS) , ipaddr(in_ipaddr) , gateway(in_gateway)
+    , dns1(in_dns1) , dns2(in_dns2) , server(in_server) {}
+    String8 ipaddr, gateway, dns1, dns2, server;
+};
+
+/* message class to carry extra configuration data for network add/update */
+class AddOrUpdateNetworkMessage : public Message {
+public:
+    AddOrUpdateNetworkMessage(const ConfiguredStation& cs)
+    : Message(CMD_ADD_OR_UPDATE_NETWORK) , mConfig(cs) {}
+    ConfiguredStation mConfig;
+};
+
 enum { WIFI_LOAD_DRIVER = 1, WIFI_UNLOAD_DRIVER, WIFI_IS_DRIVER_LOADED,
     WIFI_START_SUPPLICANT, WIFI_STOP_SUPPLICANT,
-    WIFI_CONNECT_SUPPLICANT, WIFI_CLOSE_SUPPLICANT, WIFI_WAIT_EVENT};
-
-class SupplicantState {
-/* Supplicant State Matches pretty closely with SupplicantState.java */
-public:
-    // These enumerations match the order defined in SupplicantState.java
-    // which eventually match "defs.h" from wpa_supplicant
-    // But not really very well - it seems that Android has been messing around...
-    // with the order.  My guess is that this will change in the future.
-    enum { 
-	   DISCONNECTED = 0,  // Copied from "defs.h" in wpa_supplicant.c
-	   INTERFACE_DISABLED,   // 1. The network interface is disabled
-	   INACTIVE,             // 2. No enabled networks in the configuration
-	   SCANNING,             // 3. Scanning for a network
-	   AUTHENTICATING,       // 4. Driver authentication with the BSS
-	   ASSOCIATING,          // 5. Driver associating with BSS (ap_scan=1)
-	   ASSOCIATED,           // 6. Association successfully completed
-	   FOUR_WAY_HANDSHAKE,   // 7. WPA 4-way key handshake has started
-	   GROUP_HANDSHAKE,      // 8. WPA 4-way key completed; group rekeying started
-	   COMPLETED,            // 9. All authentication is complete.  Now DHCP!
-	   DORMANT,              // 10. Android-specific state when client issues DISCONNECT
-	   UNINITIALIZED,        // 11. Android-specific state where wpa_supplicant not running
-	   INVALID               // 12. Pseudo-state; should not be seen
-    };
-    static bool isConnecting(int state) {
-	switch (state) {
-	case AUTHENTICATING:
-	case ASSOCIATING:
-	case ASSOCIATED:
-	case FOUR_WAY_HANDSHAKE:
-	case GROUP_HANDSHAKE:
-	case COMPLETED:
-	    return true;
-	}
-	return false;
-    }
-};
+    WIFI_CONNECT_SUPPLICANT, WIFI_CLOSE_SUPPLICANT, WIFI_WAIT_EVENT,
+    DHCP_STOP, DHCP_DO_REQUEST};
 
 int WifiStateMachine::request_wifi(int request)
 {
     static const char *reqname[] = {"",
         "WIFI_LOAD_DRIVER", "WIFI_UNLOAD_DRIVER", "WIFI_IS_DRIVER_LOADED",
         "WIFI_START_SUPPLICANT", "WIFI_STOP_SUPPLICANT",
-        "WIFI_CONNECT_SUPPLICANT", "WIFI_CLOSE_SUPPLICANT", "WIFI_WAIT_EVENT"};
+        "WIFI_CONNECT_SUPPLICANT", "WIFI_CLOSE_SUPPLICANT", "WIFI_WAIT_EVENT",
+        "DHCP_STOP", "DHCP_DO_REQUEST"};
     enum {CTRL_EVENT_LINK_SPEED = 100, CTRL_EVENT_DRIVER_STATE,
         CTRL_EVENT_EAP_FAILURE, CTRL_EVENT_BSS_ADDED, CTRL_EVENT_BSS_REMOVED};
     static struct {
@@ -95,6 +80,22 @@ int WifiStateMachine::request_wifi(int request)
 
     SLOGD("request_wifi: %s\n", reqname[request]);
     switch (request) {
+    case DHCP_STOP:
+        return ::dhcp_stop(mInterface.string());
+    case DHCP_DO_REQUEST: {
+        uint32_t prefixLength, lease;
+        char ipaddr[PROPERTY_VALUE_MAX], gateway[PROPERTY_VALUE_MAX];
+        char dns1[PROPERTY_VALUE_MAX], dns2[PROPERTY_VALUE_MAX];
+        char server[PROPERTY_VALUE_MAX], vendorInfo[PROPERTY_VALUE_MAX];
+
+        int result = ::dhcp_do_request(mInterface.string(), ipaddr, gateway,
+            &prefixLength, dns1, dns2, server, &lease, vendorInfo);
+        if (result)
+            enqueue(DHCP_FAILURE);
+        else
+            enqueue(new DhcpSuccessMessage(ipaddr, gateway, dns1, dns2, server));
+        return 0;
+        }
     case WIFI_LOAD_DRIVER:
         return wifi_load_driver();
     case WIFI_UNLOAD_DRIVER:
@@ -242,24 +243,6 @@ bool WifiStateMachine::doWifiBooleanCommand(const char *fmt, ...)
         SLOGI("doWifiBooleanCommand:: '%s' failed\n", result.string());
     return ret;
 }
-
-/* message class to carry DHCP results */
-class DhcpSuccessMessage : public Message {
-public:
-    DhcpSuccessMessage(const char *in_ipaddr, const char *in_gateway,
-               const char *in_dns1, const char *in_dns2, const char *in_server)
-    : Message(DHCP_SUCCESS) , ipaddr(in_ipaddr) , gateway(in_gateway)
-    , dns1(in_dns1) , dns2(in_dns2) , server(in_server) {}
-    String8 ipaddr, gateway, dns1, dns2, server;
-};
-
-/* message class to carry extra configuration data for network add/update */
-class AddOrUpdateNetworkMessage : public Message {
-public:
-    AddOrUpdateNetworkMessage(const ConfiguredStation& cs)
-    : Message(CMD_ADD_OR_UPDATE_NETWORK) , mConfig(cs) {}
-    ConfiguredStation mConfig;
-};
 
 // ------------------------------------------------------------
 static String8 removeDoubleQuotes(const String8 s)
@@ -468,6 +451,42 @@ int WifiStateMachine::findIndexByNetworkId(int network_id)
     SLOGW("WifiStateMachine::findIndexByNetworkId: network %d doesn't exist\n", network_id);
     return -1;
 }
+
+class SupplicantState {
+/* Supplicant State Matches pretty closely with SupplicantState.java */
+public:
+    // These enumerations match the order defined in SupplicantState.java
+    // which eventually match "defs.h" from wpa_supplicant
+    // But not really very well - it seems that Android has been messing around...
+    // with the order.  My guess is that this will change in the future.
+    enum { 
+	   DISCONNECTED = 0,  // Copied from "defs.h" in wpa_supplicant.c
+	   INTERFACE_DISABLED,   // 1. The network interface is disabled
+	   INACTIVE,             // 2. No enabled networks in the configuration
+	   SCANNING,             // 3. Scanning for a network
+	   AUTHENTICATING,       // 4. Driver authentication with the BSS
+	   ASSOCIATING,          // 5. Driver associating with BSS (ap_scan=1)
+	   ASSOCIATED,           // 6. Association successfully completed
+	   FOUR_WAY_HANDSHAKE,   // 7. WPA 4-way key handshake has started
+	   GROUP_HANDSHAKE,      // 8. WPA 4-way key completed; group rekeying started
+	   COMPLETED,            // 9. All authentication is complete.  Now DHCP!
+	   DORMANT,              // 10. Android-specific state when client issues DISCONNECT
+	   UNINITIALIZED,        // 11. Android-specific state where wpa_supplicant not running
+	   INVALID               // 12. Pseudo-state; should not be seen
+    };
+    static bool isConnecting(int state) {
+	switch (state) {
+	case AUTHENTICATING:
+	case ASSOCIATING:
+	case ASSOCIATED:
+	case FOUR_WAY_HANDSHAKE:
+	case GROUP_HANDSHAKE:
+	case COMPLETED:
+	    return true;
+	}
+	return false;
+    }
+};
 
 /* This superclass state encapsulates all of:
      DriverStarting, DriverStopping, DriverStarted, DriverStarted
@@ -680,7 +699,7 @@ broadcastresult:
 void WifiStateMachineActions::Supplicant_Started_exit(void)
 {
     SLOGV("....Supplicant_Started_exit(): Stop DHCP and clear IP\n");
-    ::dhcp_stop(mInterface.string());
+    request_wifi(DHCP_STOP);
     mNetworkInterface->clearInterfaceAddresses();
     // Update the Wifi Information visible to the user
     Mutex::Autolock _l(mReadLock);
@@ -790,19 +809,7 @@ stateprocess_t WifiStateMachineActions::Connect_Mode_process(Message *message)
         } return SM_HANDLED;
     case NETWORK_CONNECTION_EVENT: {
         SLOGV("....handleNetworkConnect(%p)\n", message);
-        {
-        uint32_t prefixLength, lease;
-        char ipaddr[PROPERTY_VALUE_MAX], gateway[PROPERTY_VALUE_MAX];
-        char dns1[PROPERTY_VALUE_MAX], dns2[PROPERTY_VALUE_MAX];
-        char server[PROPERTY_VALUE_MAX], vendorInfo[PROPERTY_VALUE_MAX];
-
-        int result = ::dhcp_do_request(mInterface.string(), ipaddr, gateway,
-            &prefixLength, dns1, dns2, server, &lease, vendorInfo);
-        if (result)
-            enqueue(DHCP_FAILURE);
-        else
-            enqueue(new DhcpSuccessMessage(ipaddr, gateway, dns1, dns2, server));
-        }
+        request_wifi(DHCP_DO_REQUEST);
         Mutex::Autolock _l(mReadLock);
         mWifiInformation.bssid = message->string();
         mWifiInformation.network_id = message->arg1();
@@ -984,7 +991,7 @@ WifiStateMachine::WifiStateMachine(const char *interface, WifiService *servicep)
     , mService(servicep)
 {
     mNetworkInterface = new NetworkInterface(this, mInterface);
-    ::dhcp_stop(mInterface.string());
+    request_wifi(DHCP_STOP);
 
     // Ensure we've terminated DHCP and the wpa_supplicant
     // The DHCP state machine ensures that the old dhcp is stopped

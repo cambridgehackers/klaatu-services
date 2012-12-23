@@ -8,11 +8,10 @@
 #include <binder/BinderService.h>
 #include <wifi/IWifiService.h>
 #include <utils/List.h>
-#include "WifiStateMachine.h"
 
 namespace android {
-
 class WifiServerClient;
+class WifiStateMachine;
 class WifiService : // public BinderService<WifiService>,
 	public BnWifiService,
 	public IBinder::DeathRecipient
@@ -44,8 +43,6 @@ private:
     KeyedVector< wp<IBinder>, WifiServerClient *> mClients;
     WifiState         mState;
  };
-
 }; // namespace android
 
 #endif // _WIFI_SERVICE_H
-

@@ -10,16 +10,11 @@
 
 #include <utils/String8.h>
 #include <wifi/IWifiClient.h>
-#include <binder/Parcel.h>
 #include "StateMachine.h"
 
 namespace android {
-
 class WifiService;
 class NetworkInterface;
-class DhcpStateMachine;
-class DhcpSuccessMessage;
-
 class WifiStateMachine : public StateMachine 
 {
 public:
@@ -57,12 +52,10 @@ protected:
     // so they must all be read-protected
     mutable Mutex              mReadLock; 
     WifiInformation            mWifiInformation;   // Information about the current network
-    DhcpStateMachine          *mDhcpStateMachine;
     // TODO:  Probably need a Mutex lock
     Vector<ScannedStation>     mStations;
     Vector<ConfiguredStation>  mStationsConfig;
 };
-
 };  // namespace android
 
 #define FSM_DEFINE_ENUMS
