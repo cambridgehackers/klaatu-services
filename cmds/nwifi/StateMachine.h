@@ -76,7 +76,7 @@ public:
     virtual stateprocess_t invoke_process(PROCESS_PROTO, Message *) = 0;
 
 protected:
-    virtual const char *msgStr(int msg_id);
+    virtual const char *msgStr(int msg_id) { return ""; }
 
 private:
     virtual bool      threadLoop();
