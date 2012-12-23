@@ -76,7 +76,7 @@ int WifiStateMachine::request_wifi(int request)
         {"CTRL-EVENT-BSS-REMOVED ", CTRL_EVENT_BSS_REMOVED},
         {"WPA:", AUTHENTICATION_FAILURE_EVENT}, {NULL, 0} };
     int ret = 0;
-    char request_wifibuf[BUF_SIZE];  // Will store a UTF string
+    char rbuf[BUF_SIZE];  // Will store a UTF string
 
     SLOGD("request_wifi: %s\n", reqname[request]);
     switch (request) {
@@ -97,9 +97,25 @@ int WifiStateMachine::request_wifi(int request)
         break;
         }
     case WIFI_LOAD_DRIVER:
-        return wifi_load_driver();
+        ret = wifi_load_driver();
+        if (!ret)
+            enqueue(CMD_LOAD_DRIVER_SUCCESS);
+        else {
+            mService->BroadcastState(WS_UNKNOWN);
+            enqueue(CMD_LOAD_DRIVER_FAILURE);
+        }
+        break;
     case WIFI_UNLOAD_DRIVER:
-        return wifi_unload_driver();
+        ret = wifi_unload_driver();
+        if (!ret) {
+            enqueue(CMD_UNLOAD_DRIVER_SUCCESS);
+            mService->BroadcastState(WS_DISABLED);
+        }
+        else {
+            enqueue(CMD_UNLOAD_DRIVER_FAILURE);
+            mService->BroadcastState(WS_UNKNOWN);
+        }
+        break;
     case WIFI_IS_DRIVER_LOADED:
         return is_wifi_driver_loaded();
     case WIFI_START_SUPPLICANT:
@@ -107,15 +123,18 @@ int WifiStateMachine::request_wifi(int request)
     case WIFI_STOP_SUPPLICANT:
         return wifi_stop_supplicant();
     case WIFI_CONNECT_SUPPLICANT:
-        return wifi_connect_to_supplicant(mInterface.string());
+        ret = wifi_connect_to_supplicant(mInterface.string());
+        if (!ret)
+            enqueue(SUP_CONNECTION_EVENT);
+        break;
     case WIFI_CLOSE_SUPPLICANT:
         wifi_close_supplicant_connection(mInterface.string());
         break;
     case WIFI_WAIT_EVENT:
-        if (wifi_wait_for_event(mInterface.string(), request_wifibuf, sizeof(request_wifibuf)) > 0) {
-            char *buf = request_wifibuf;
+        if (wifi_wait_for_event(mInterface.string(), rbuf, sizeof(rbuf)) > 0) {
+            char *buf = rbuf;
             int event = 0, len = 0;
-            SLOGV("##### %s\n", request_wifibuf);
+            SLOGV("##### %s\n", rbuf);
             while (1) {
                 len = strlen(event_map[event].name);
                 if (!strncmp(buf, event_map[event].name, len))
@@ -314,12 +333,7 @@ stateprocess_t WifiStateMachineActions::default_process(Message *message)
 void WifiStateMachineActions::Driver_Loading_enter(void)
 {
     mService->BroadcastState(WS_ENABLING);
-    if (!request_wifi(WIFI_LOAD_DRIVER))
-        enqueue(CMD_LOAD_DRIVER_SUCCESS);
-    else {
-        mService->BroadcastState(WS_UNKNOWN);
-        enqueue(CMD_LOAD_DRIVER_FAILURE);
-    }
+    request_wifi(WIFI_LOAD_DRIVER);
 }
 
 /*
@@ -333,11 +347,7 @@ static int monitorThread(void *arg)
     SLOGV("........#### Starting monitor thread ####\n");
     int i = 0;
     char buf[BUF_SIZE];  // Will store a UTF string
-    while (1) {
-        if (!wsm->request_wifi(WIFI_CONNECT_SUPPLICANT)) {
-            wsm->enqueue(SUP_CONNECTION_EVENT);
-            break;
-        }
+    while (wsm->request_wifi(WIFI_CONNECT_SUPPLICANT)) {
         if (++i > 5) {
             wsm->enqueue(SUP_DISCONNECTION_EVENT);
             return -1;
@@ -364,14 +374,7 @@ stateprocess_t WifiStateMachineActions::Driver_Loaded_process(Message *message)
 
 void WifiStateMachineActions::Driver_Unloading_enter(void)
 {
-    if (!request_wifi(WIFI_UNLOAD_DRIVER)) {
-        enqueue(CMD_UNLOAD_DRIVER_SUCCESS);
-        mService->BroadcastState(WS_DISABLED);
-    }
-    else {
-        enqueue(CMD_UNLOAD_DRIVER_FAILURE);
-        mService->BroadcastState(WS_UNKNOWN);
-    }
+    request_wifi(WIFI_UNLOAD_DRIVER);
 }
 
 /*
@@ -452,40 +455,24 @@ int WifiStateMachine::findIndexByNetworkId(int network_id)
     return -1;
 }
 
-class SupplicantState {
-/* Supplicant State Matches pretty closely with SupplicantState.java */
-public:
-    // These enumerations match the order defined in SupplicantState.java
-    // which eventually match "defs.h" from wpa_supplicant
-    // But not really very well - it seems that Android has been messing around...
-    // with the order.  My guess is that this will change in the future.
-    enum { 
-	   DISCONNECTED = 0,  // Copied from "defs.h" in wpa_supplicant.c
-	   INTERFACE_DISABLED,   // 1. The network interface is disabled
-	   INACTIVE,             // 2. No enabled networks in the configuration
-	   SCANNING,             // 3. Scanning for a network
-	   AUTHENTICATING,       // 4. Driver authentication with the BSS
-	   ASSOCIATING,          // 5. Driver associating with BSS (ap_scan=1)
-	   ASSOCIATED,           // 6. Association successfully completed
-	   FOUR_WAY_HANDSHAKE,   // 7. WPA 4-way key handshake has started
-	   GROUP_HANDSHAKE,      // 8. WPA 4-way key completed; group rekeying started
-	   COMPLETED,            // 9. All authentication is complete.  Now DHCP!
-	   DORMANT,              // 10. Android-specific state when client issues DISCONNECT
-	   UNINITIALIZED,        // 11. Android-specific state where wpa_supplicant not running
-	   INVALID               // 12. Pseudo-state; should not be seen
-    };
-    static bool isConnecting(int state) {
-	switch (state) {
-	case AUTHENTICATING:
-	case ASSOCIATING:
-	case ASSOCIATED:
-	case FOUR_WAY_HANDSHAKE:
-	case GROUP_HANDSHAKE:
-	case COMPLETED:
-	    return true;
-	}
-	return false;
-    }
+// These enumerations match the order defined in SupplicantState.java
+// which eventually match "defs.h" from wpa_supplicant
+// But not really very well - it seems that Android has been messing around...
+// with the order.  My guess is that this will change in the future.
+enum {
+   SSTATE_DISCONNECTED = 0,  // Copied from "defs.h" in wpa_supplicant.c
+   SSTATE_INTERFACE_DISABLED,   // 1. The network interface is disabled
+   SSTATE_INACTIVE,             // 2. No enabled networks in the configuration
+   SSTATE_SCANNING,             // 3. Scanning for a network
+   SSTATE_AUTHENTICATING,       // 4. Driver authentication with the BSS
+   SSTATE_ASSOCIATING,          // 5. Driver associating with BSS (ap_scan=1)
+   SSTATE_ASSOCIATED,           // 6. Association successfully completed
+   SSTATE_FOUR_WAY_HANDSHAKE,   // 7. WPA 4-way key handshake has started
+   SSTATE_GROUP_HANDSHAKE,      // 8. WPA 4-way key completed; group rekeying started
+   SSTATE_COMPLETED,            // 9. All authentication is complete.  Now DHCP!
+   SSTATE_DORMANT,              // 10. Android-specific state when client issues DISCONNECT
+   SSTATE_UNINITIALIZED,        // 11. Android-specific state where wpa_supplicant not running
+   SSTATE_INVALID               // 12. Pseudo-state; should not be seen
 };
 
 /* This superclass state encapsulates all of:
@@ -701,7 +688,7 @@ void WifiStateMachineActions::Supplicant_Started_exit(void)
     mWifiInformation.bssid = "";
     mWifiInformation.ssid = "";
     mWifiInformation.network_id = -1;
-    mWifiInformation.supplicant_state = SupplicantState::UNINITIALIZED;
+    mWifiInformation.supplicant_state = SSTATE_UNINITIALIZED;
     mWifiInformation.rssi = -9999;
     mWifiInformation.link_speed = -1;
     mService->BroadcastInformation(mWifiInformation);
@@ -761,7 +748,7 @@ stateprocess_t WifiStateMachineActions::Driver_Stopping_process(Message *message
 {
     if (message->command() == SUP_STATE_CHANGE_EVENT) {
         handleSupplicantStateChange(message);
-        if (mWifiInformation.supplicant_state != SupplicantState::INTERFACE_DISABLED)
+        if (mWifiInformation.supplicant_state != SSTATE_INTERFACE_DISABLED)
             return SM_HANDLED;
     }
     return SM_DEFAULT;
@@ -986,10 +973,11 @@ WifiStateMachine::WifiStateMachine(const char *interface, WifiService *servicep)
 {
     mNetworkInterface = new NetworkInterface(this, mInterface);
     request_wifi(DHCP_STOP);
+    int ret = request_wifi(WIFI_STOP_SUPPLICANT);
 
     // Ensure we've terminated DHCP and the wpa_supplicant
     // The DHCP state machine ensures that the old dhcp is stopped
-    SLOGV("Stopping supplicant, result=%d\n", request_wifi(WIFI_STOP_SUPPLICANT));
+    SLOGV("Stopping supplicant, result=%d\n", ret);
 
     ADD_ITEMS(mStateMap);
     //transitionTo(INITIAL_STATE);
@@ -1039,15 +1027,25 @@ void WifiStateMachine::Register(const sp<IWifiClient>& client, int flags)
     // We don't preemptively send rssi or link speed data
 }
 
+static bool isConnecting(int state)
+{
+    switch (state) {
+    case SSTATE_ASSOCIATING: case SSTATE_AUTHENTICATING: case SSTATE_ASSOCIATED:
+    case SSTATE_FOUR_WAY_HANDSHAKE: case SSTATE_GROUP_HANDSHAKE: case SSTATE_COMPLETED:
+        return true;
+    }
+    return false;
+}
+
 void WifiStateMachine::handleSupplicantStateChange(Message *message)
 {
 //    SLOGV("....TODO: handleSupplicantStatechange\n");
     Mutex::Autolock _l(mReadLock);
     mWifiInformation.supplicant_state = message->arg2();
-    mWifiInformation.network_id = SupplicantState::INVALID;
-    if (SupplicantState::isConnecting(mWifiInformation.supplicant_state))
+    mWifiInformation.network_id = SSTATE_INVALID;
+    if (isConnecting(mWifiInformation.supplicant_state))
         mWifiInformation.network_id = message->arg1();
-    if (mWifiInformation.supplicant_state == SupplicantState::ASSOCIATING)
+    if (mWifiInformation.supplicant_state == SSTATE_ASSOCIATING)
         mWifiInformation.bssid = message->string();
     mService->BroadcastInformation(mWifiInformation);
 }
