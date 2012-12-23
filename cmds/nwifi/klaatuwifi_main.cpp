@@ -6,10 +6,7 @@
 #include <binder/IServiceManager.h>
 #include <cutils/properties.h>
 #include <binder/Parcel.h>
-
-#include "WifiDebug.h"
 #include "WifiService.h"
-#include "WifiStateMachine.h"
 
 namespace android {
 
