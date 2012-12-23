@@ -139,6 +139,7 @@ void initstates(void)
 
 #ifdef FSM_ACTION_CODE
 #define addstateitem(command, aenter, aprocess, aexit, parent) \
+    mStateMap[command].mName = #command; \
     mStateMap[command].mParent = parent; \
     mStateMap[command].mEnter = aenter; \
     mStateMap[command].mProcess = aprocess; \

@@ -54,6 +54,7 @@ public:
     PROCESS_PROTO    mProcess;
     ENTER_EXIT_PROTO mExit;
     int              mParent;
+    const char *     mName;
 };
 
 // ---------------------------------------------------------------------------

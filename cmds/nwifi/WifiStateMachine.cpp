@@ -94,7 +94,7 @@ int WifiStateMachine::request_wifi(int request)
             enqueue(DHCP_FAILURE);
         else
             enqueue(new DhcpSuccessMessage(ipaddr, gateway, dns1, dns2, server));
-        return 0;
+        break;
         }
     case WIFI_LOAD_DRIVER:
         return wifi_load_driver();
@@ -515,6 +515,7 @@ stateprocess_t WifiStateMachineActions::Supplicant_Started_process(Message *mess
            00:24:d2:92:7e:e42412-65[WEP][ESS]5YPKM
            00:26:62:50:7e:4a2462-89[WEP][ESS]HD253 */
         String8 data = doWifiStringCommand("SCAN_RESULTS");
+        Vector<ScannedStation>     mStations;
         mStations.clear();
         Vector<String8> lines = splitString(data.string(), '\n');
         for (size_t i = 1 ; i < lines.size() ; i++) {
@@ -572,6 +573,7 @@ stateprocess_t WifiStateMachineActions::Supplicant_Started_process(Message *mess
                 return SM_HANDLED;
             }
             network_id = atoi(s.string());
+            // We've added a new station; shove one on the end of the list
             //printf("* Adding new network id=%d\n", network_id);
         }
         // ****************************************
@@ -592,7 +594,7 @@ stateprocess_t WifiStateMachineActions::Supplicant_Started_process(Message *mess
         doWifiBooleanCommand("SAVE_CONFIG");
         // We need to re-read the configuration back from the supplicant
         // to correctly update the values that will be displayed to the client.
-        if (index == -1) {    // We've added a new station; shove one on the end of the list
+        if (index == -1) {
             mStationsConfig.push(ConfiguredStation());
             index = mStationsConfig.size() - 1;
         }
@@ -620,10 +622,8 @@ stateprocess_t WifiStateMachineActions::Supplicant_Started_process(Message *mess
         }
         if (mStationsConfig[index].priority < p) {
             p++;
-            if (!doWifiBooleanCommand("SET_NETWORK %d priority %d", network_id, p)) {
-                SLOGW("WifiStateMachine::selectNetwork failed to priority %d: %d\n", network_id, p);
+            if (!doWifiBooleanCommand("SET_NETWORK %d priority %d", network_id, p))
                 return SM_HANDLED;
-            }
             mStationsConfig.editItemAt(index).priority = p;
         }
         }
@@ -632,10 +632,8 @@ stateprocess_t WifiStateMachineActions::Supplicant_Started_process(Message *mess
         Mutex::Autolock _l(mReadLock);
         bool disable_others = message->command() != CMD_ENABLE_NETWORK || message->arg2() != 0;
         SLOGD("WifiStateMachine::enableNetwork %d (disable_others=%d)\n", network_id, disable_others);
-        if (!doWifiBooleanCommand("%s %d",
-           (disable_others ? "SELECT_NETWORK" : "ENABLE_NETWORK"), network_id))
-            SLOGW("WifiStateMachine::enableNetwork failed for %d\n", network_id);
-        else {
+        if (doWifiBooleanCommand("%s %d",
+           (disable_others ? "SELECT_NETWORK" : "ENABLE_NETWORK"), network_id)) {
             for (size_t i = 0 ; i < mStationsConfig.size() ; i++) {
                 ConfiguredStation& station(mStationsConfig.editItemAt(i));
                 if (station.network_id == network_id)
@@ -649,9 +647,7 @@ stateprocess_t WifiStateMachineActions::Supplicant_Started_process(Message *mess
     case CMD_DISABLE_NETWORK: {
         Mutex::Autolock _l(mReadLock);
         SLOGD("WifiStateMachine::disableNetwork %d\n", network_id);
-        if (!doWifiBooleanCommand("DISABLE_NETWORK %d", network_id))
-            SLOGW("WifiStateMachine::disableNetwork failed for %d\n", network_id);
-        else {
+        if (doWifiBooleanCommand("DISABLE_NETWORK %d", network_id)) {
             for (size_t i = 0 ; i < mStationsConfig.size() ; i++) {
                 ConfiguredStation& station(mStationsConfig.editItemAt(i));
                 if (station.network_id == network_id)
@@ -663,9 +659,7 @@ stateprocess_t WifiStateMachineActions::Supplicant_Started_process(Message *mess
     case CMD_REMOVE_NETWORK: {
         SLOGV("REMOVING NETWORK %d\n", network_id);
         Mutex::Autolock _l(mReadLock);
-        if (!doWifiBooleanCommand("REMOVE_NETWORK %d", network_id)) {
-            SLOGI("WifiStateMachine::removeNetwork %d failed\n", network_id);
-        } else {
+        if (doWifiBooleanCommand("REMOVE_NETWORK %d", network_id)) {
             for (size_t i = 0 ; i < mStationsConfig.size() ; i++) {
                 const ConfiguredStation& cs = mStationsConfig.itemAt(i);
                 if (cs.network_id == network_id) {

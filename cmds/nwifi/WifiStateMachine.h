@@ -53,7 +53,6 @@ protected:
     mutable Mutex              mReadLock; 
     WifiInformation            mWifiInformation;   // Information about the current network
     // TODO:  Probably need a Mutex lock
-    Vector<ScannedStation>     mStations;
     Vector<ConfiguredStation>  mStationsConfig;
 };
 };  // namespace android
