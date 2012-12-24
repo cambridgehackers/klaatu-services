@@ -28,9 +28,9 @@ static const int RSSI_POLL_INTERVAL_MSECS = 3000;
 static const int SUPPLICANT_RESTART_INTERVAL_MSECS = 5000;
 
 /* message class to carry DHCP results */
-class DhcpSuccessMessage : public Message {
+class DhcpResultMessage : public Message {
 public:
-    DhcpSuccessMessage(const char *in_ipaddr, const char *in_gateway,
+    DhcpResultMessage(const char *in_ipaddr, const char *in_gateway,
                const char *in_dns1, const char *in_dns2, const char *in_server)
     : Message(DHCP_SUCCESS) , ipaddr(in_ipaddr) , gateway(in_gateway)
     , dns1(in_dns1) , dns2(in_dns2) , server(in_server) {}
@@ -79,7 +79,7 @@ int WifiStateMachine::request_wifi(int request)
     char rbuf[BUF_SIZE];  // Will store a UTF string
 
     if (request != WIFI_WAIT_EVENT)
-        SLOGD("request_wifi: %s\n", reqname[request]);
+        SLOGD("....REQ: %s\n", reqname[request]);
     switch (request) {
     case DHCP_STOP:
         return ::dhcp_stop(mInterface.string());
@@ -94,28 +94,16 @@ int WifiStateMachine::request_wifi(int request)
         if (result)
             enqueue(DHCP_FAILURE);
         else
-            enqueue(new DhcpSuccessMessage(ipaddr, gateway, dns1, dns2, server));
+            enqueue(new DhcpResultMessage(ipaddr, gateway, dns1, dns2, server));
         break;
         }
     case WIFI_LOAD_DRIVER:
         ret = wifi_load_driver();
-        if (!ret)
-            enqueue(CMD_LOAD_DRIVER_SUCCESS);
-        else {
-            mService->BroadcastState(WS_UNKNOWN);
-            enqueue(CMD_LOAD_DRIVER_FAILURE);
-        }
+        enqueue(!ret ? CMD_LOAD_DRIVER_SUCCESS : CMD_LOAD_DRIVER_FAILURE);
         break;
     case WIFI_UNLOAD_DRIVER:
         ret = wifi_unload_driver();
-        if (!ret) {
-            enqueue(CMD_UNLOAD_DRIVER_SUCCESS);
-            mService->BroadcastState(WS_DISABLED);
-        }
-        else {
-            enqueue(CMD_UNLOAD_DRIVER_FAILURE);
-            mService->BroadcastState(WS_UNKNOWN);
-        }
+        enqueue(!ret ? CMD_UNLOAD_DRIVER_SUCCESS : CMD_UNLOAD_DRIVER_FAILURE);
         break;
     case WIFI_IS_DRIVER_LOADED:
         return is_wifi_driver_loaded();
@@ -124,10 +112,7 @@ int WifiStateMachine::request_wifi(int request)
     case WIFI_STOP_SUPPLICANT:
         return wifi_stop_supplicant();
     case WIFI_CONNECT_SUPPLICANT:
-        ret = wifi_connect_to_supplicant(mInterface.string());
-        if (!ret)
-            enqueue(SUP_CONNECTION_EVENT);
-        break;
+        return wifi_connect_to_supplicant(mInterface.string());
     case WIFI_CLOSE_SUPPLICANT:
         wifi_close_supplicant_connection(mInterface.string());
         break;
@@ -148,7 +133,7 @@ int WifiStateMachine::request_wifi(int request)
             buf += len;
             event = event_map[event].event;
             if (event != CTRL_EVENT_BSS_ADDED && event != CTRL_EVENT_BSS_REMOVED)
-                SLOGV("##### %s event %d\n", rbuf, event);
+                SLOGV(".....EVENT: '%s' event %d\n", rbuf, event);
             switch (event) {
             case NETWORK_CONNECTION_EVENT: {
                 /* Regex pattern for extracting an Ethernet-style MAC address from a string.
@@ -201,13 +186,13 @@ int WifiStateMachine::request_wifi(int request)
                 break;
                 }
             case CTRL_EVENT_LINK_SPEED:
-                SLOGV("....link-speed %s\n", buf);
+                //SLOGV("....link-speed %s\n", buf);
                 break;
             case CTRL_EVENT_DRIVER_STATE:
-                SLOGV("....driver-state %s\n", buf);
+                //SLOGV("....driver-state %s\n", buf);
                 break;
             case CTRL_EVENT_EAP_FAILURE:
-                SLOGV("....eap-failure %s\n", buf);
+                //SLOGV("....eap-failure %s\n", buf);
                 break;
             case CTRL_EVENT_BSS_ADDED:
                 // SLOGV(".....bss-added %s\n", buf);
@@ -234,13 +219,14 @@ String8 WifiStateMachine::doWifiStringCommand(const char *fmt, va_list args)
     char reply[4096];
     size_t reply_len = sizeof(reply) - 1;
     int byteCount = vsnprintf(buf, sizeof(buf), fmt, args);
+    SLOGV(".....Command: %s\n", buf);
     if (byteCount < 0 || byteCount >= BUF_SIZE
      || ::wifi_command(mInterface.string(), buf, reply, &reply_len))
 	reply_len = 0;
     if (reply_len > 0 && reply[reply_len-1] == '\n')
 	reply_len--;
     reply[reply_len] = 0;
-    // printf("[[[%s]]]\n", reply);
+    SLOGV(".....Reply: %s\n", reply);
     return String8(reply);
 }
 
@@ -261,7 +247,7 @@ bool WifiStateMachine::doWifiBooleanCommand(const char *fmt, ...)
     va_end(args);
     bool ret = (!strcmp(result, "OK"));
     if (!ret)
-        SLOGI("doWifiBooleanCommand:: '%s' failed\n", result.string());
+        SLOGI(".....doWifiBooleanCommand:: '%s' failed\n", result.string());
     return ret;
 }
 
@@ -335,7 +321,8 @@ stateprocess_t WifiStateMachineActions::default_process(Message *message)
 void WifiStateMachineActions::Driver_Loading_enter(void)
 {
     mService->BroadcastState(WS_ENABLING);
-    request_wifi(WIFI_LOAD_DRIVER);
+    if (request_wifi(WIFI_LOAD_DRIVER))
+        mService->BroadcastState(WS_UNKNOWN);
 }
 
 /*
@@ -356,6 +343,7 @@ static int monitorThread(void *arg)
         }
         usleep(250 * 1000);  // Sleep for 250 ms
     }
+    wsm->enqueue(SUP_CONNECTION_EVENT);
     while (wsm->request_wifi(WIFI_WAIT_EVENT) <= 0)
         ;
     return 0;
@@ -376,7 +364,7 @@ stateprocess_t WifiStateMachineActions::Driver_Loaded_process(Message *message)
 
 void WifiStateMachineActions::Driver_Unloading_enter(void)
 {
-    request_wifi(WIFI_UNLOAD_DRIVER);
+    mService->BroadcastState(request_wifi(WIFI_UNLOAD_DRIVER) ? WS_UNKNOWN : WS_DISABLED);
 }
 
 /*
@@ -570,9 +558,10 @@ stateprocess_t WifiStateMachineActions::Supplicant_Started_process(Message *mess
         // ****************************************
         // Configure the SSID, Key management, Pre-shared key, Priority
         if ((!doWifiBooleanCommand("SET_NETWORK %d ssid \"%s\"", network_id, cs.ssid.string())
-         || (!cs.key_mgmt.isEmpty() && !doWifiBooleanCommand("SET_NETWORK %d key_mgmt %s", network_id, cs.key_mgmt.string()))
-         || (!cs.pre_shared_key.isEmpty() && cs.pre_shared_key != "*" &&
-            !doWifiBooleanCommand("SET_NETWORK %d psk \"%s\"", network_id, cs.pre_shared_key.string()))
+         || (!cs.key_mgmt.isEmpty()
+             && !doWifiBooleanCommand("SET_NETWORK %d key_mgmt %s", network_id, cs.key_mgmt.string()))
+         || (!cs.pre_shared_key.isEmpty() && cs.pre_shared_key != "*"
+             && !doWifiBooleanCommand("SET_NETWORK %d psk \"%s\"", network_id, cs.pre_shared_key.string()))
          || !doWifiBooleanCommand("SET_NETWORK %d priority %d", network_id, cs.priority))
          && cs.network_id == -1) {  // We were adding a new station
             doWifiBooleanCommand("REMOVE_NETWORK %d", network_id);
@@ -839,7 +828,7 @@ static bool fixDnsEntry(const char *key, const char *value)
 stateprocess_t WifiStateMachineActions::Connecting_process(Message *message)
 {
     if (message->command() == DHCP_SUCCESS) {
-        const DhcpSuccessMessage *dmessage = static_cast<DhcpSuccessMessage *>(message);
+        const DhcpResultMessage *dmessage = static_cast<DhcpResultMessage *>(message);
         SLOGV("Got DHCP ipaddr=%s gateway=%s dns1=%s dns2=%s server=%s\n",
             dmessage->ipaddr.string(), dmessage->gateway.string(), dmessage->dns1.string(),
             dmessage->dns2.string(), dmessage->server.string());
