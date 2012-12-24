@@ -78,7 +78,8 @@ int WifiStateMachine::request_wifi(int request)
     int ret = 0;
     char rbuf[BUF_SIZE];  // Will store a UTF string
 
-    SLOGD("request_wifi: %s\n", reqname[request]);
+    if (request != WIFI_WAIT_EVENT)
+        SLOGD("request_wifi: %s\n", reqname[request]);
     switch (request) {
     case DHCP_STOP:
         return ::dhcp_stop(mInterface.string());
@@ -134,7 +135,6 @@ int WifiStateMachine::request_wifi(int request)
         if (wifi_wait_for_event(mInterface.string(), rbuf, sizeof(rbuf)) > 0) {
             char *buf = rbuf;
             int event = 0, len = 0;
-            SLOGV("##### %s\n", rbuf);
             while (1) {
                 len = strlen(event_map[event].name);
                 if (!strncmp(buf, event_map[event].name, len))
@@ -147,6 +147,8 @@ int WifiStateMachine::request_wifi(int request)
             }
             buf += len;
             event = event_map[event].event;
+            if (event != CTRL_EVENT_BSS_ADDED && event != CTRL_EVENT_BSS_REMOVED)
+                SLOGV("##### %s event %d\n", rbuf, event);
             switch (event) {
             case NETWORK_CONNECTION_EVENT: {
                 /* Regex pattern for extracting an Ethernet-style MAC address from a string.
