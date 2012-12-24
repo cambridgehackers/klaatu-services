@@ -139,8 +139,8 @@ int WifiStateMachine::request_wifi(int request)
             switch (event) {
             case NETWORK_CONNECTION_EVENT: {
                 /* Regex pattern for extracting an Ethernet-style MAC address from a string.
-                 * Matches a strings like the following:<pre>
-                 * CTRL-EVENT-CONNECTED - Connection to 00:1e:58:ec:d5:6d completed (reauth) [id=1 id_str=]</pre> */
+                 * Matches a strings like the following:
+                 * 'CTRL-EVENT-CONNECTED - Connection to 00:1e:58:ec:d5:6d completed (reauth) [id=1 id_str=]' */
                 char *p = buf;
                 while (*p != ' ' && *p)
                     p++;
@@ -188,19 +188,10 @@ int WifiStateMachine::request_wifi(int request)
                 break;
                 }
             case CTRL_EVENT_LINK_SPEED:
-                //SLOGV("....link-speed %s\n", buf);
-                break;
             case CTRL_EVENT_DRIVER_STATE:
-                //SLOGV("....driver-state %s\n", buf);
-                break;
             case CTRL_EVENT_EAP_FAILURE:
-                //SLOGV("....eap-failure %s\n", buf);
-                break;
             case CTRL_EVENT_BSS_ADDED:
-                // SLOGV(".....bss-added %s\n", buf);
-                break;
             case CTRL_EVENT_BSS_REMOVED:
-                // SLOGV(".....bss-removed %s\n", buf);
                 break;
             case NETWORK_DISCONNECTION_EVENT:
             case SUP_SCAN_RESULTS_EVENT:
@@ -405,7 +396,6 @@ stateprocess_t WifiStateMachineActions::Supplicant_Starting_process(Message *mes
     // ### TODO: This can stall.  Not a good idea
     bool something_changed = false;
     mStationsConfig.clear();
-    // printf("......loadConfiguredNetworks()\n");
     String8 listStr = doWifiStringCommand("LIST_NETWORKS");
     Vector<String8> lines = splitString(listStr, '\n');
     // The first line is a header
@@ -447,6 +437,19 @@ int WifiStateMachine::findIndexByNetworkId(int network_id)
     return -1;
 }
 
+void WifiStateMachine::setStatus(const char *command, int network_id, ConfiguredStation::Status astatus)
+{
+        Mutex::Autolock _l(mReadLock);
+        if (doWifiBooleanCommand(command, network_id)) {
+            for (size_t i = 0 ; i < mStationsConfig.size() ; i++) {
+                ConfiguredStation& station(mStationsConfig.editItemAt(i));
+                if (station.network_id == network_id)
+                    station.status = astatus;
+                else if (!strncmp(command, "SELECT_NETWORK", strlen("SELECT_NETWORK")))
+                    station.status = ConfiguredStation::DISABLED;
+            }
+        }
+}
 /* This superclass state encapsulates all of:
      DriverStarting, DriverStopping, DriverStarted, DriverStarted
      ScanMode ConnectMode Connecting, Disconnected, Connected, Disconnecting
@@ -456,7 +459,6 @@ stateprocess_t WifiStateMachineActions::Supplicant_Started_process(Message *mess
     int network_id = message->arg1();
     switch (message->command()) {
     case SUP_DISCONNECTION_EVENT:
-        SLOGD("Connection lost, restarting supplicant\n");
         request_wifi(WIFI_STOP_SUPPLICANT);
         request_wifi(WIFI_CLOSE_SUPPLICANT);
         // mNetworkInfo.setIsAvailable(false);
@@ -532,8 +534,6 @@ stateprocess_t WifiStateMachineActions::Supplicant_Started_process(Message *mess
                 return SM_HANDLED;
             }
             network_id = atoi(s.string());
-            // We've added a new station; shove one on the end of the list
-            //printf("* Adding new network id=%d\n", network_id);
         }
         // ****************************************
         // TODO:  The preshared key and the SSID need to be properly string-escaped
@@ -571,7 +571,6 @@ stateprocess_t WifiStateMachineActions::Supplicant_Started_process(Message *mess
         Mutex::Autolock _l(mReadLock);
         if (network_id == -1)
             return SM_HANDLED;
-        SLOGD("WifiStateMachine::selectNetwork %d\n", network_id);
         int index = findIndexByNetworkId(network_id);
         if (index < 0)
             return SM_HANDLED;
@@ -588,36 +587,14 @@ stateprocess_t WifiStateMachineActions::Supplicant_Started_process(Message *mess
         }
         }
         /* fall through */
-    case CMD_ENABLE_NETWORK: {
-        Mutex::Autolock _l(mReadLock);
-        bool disable_others = message->command() != CMD_ENABLE_NETWORK || message->arg2() != 0;
-        SLOGD("WifiStateMachine::enableNetwork %d (disable_others=%d)\n", network_id, disable_others);
-        if (doWifiBooleanCommand("%s %d",
-           (disable_others ? "SELECT_NETWORK" : "ENABLE_NETWORK"), network_id)) {
-            for (size_t i = 0 ; i < mStationsConfig.size() ; i++) {
-                ConfiguredStation& station(mStationsConfig.editItemAt(i));
-                if (station.network_id == network_id)
-                    station.status = ConfiguredStation::ENABLED;
-                else if (disable_others)
-                    station.status = ConfiguredStation::DISABLED;
-            }
-        }
+    case CMD_ENABLE_NETWORK:
+        setStatus((message->command() != CMD_ENABLE_NETWORK || message->arg2() != 0)
+             ? "SELECT_NETWORK %d" : "ENABLE_NETWORK %d", network_id, ConfiguredStation::ENABLED);
         goto broadcastresult;
-        }
-    case CMD_DISABLE_NETWORK: {
-        Mutex::Autolock _l(mReadLock);
-        SLOGD("WifiStateMachine::disableNetwork %d\n", network_id);
-        if (doWifiBooleanCommand("DISABLE_NETWORK %d", network_id)) {
-            for (size_t i = 0 ; i < mStationsConfig.size() ; i++) {
-                ConfiguredStation& station(mStationsConfig.editItemAt(i));
-                if (station.network_id == network_id)
-                    station.status = ConfiguredStation::DISABLED;
-            }
-        }
+    case CMD_DISABLE_NETWORK:
+        setStatus("DISABLE_NETWORK %d", network_id, ConfiguredStation::DISABLED);
         goto broadcastresult;
-        }
     case CMD_REMOVE_NETWORK: {
-        SLOGV("REMOVING NETWORK %d\n", network_id);
         Mutex::Autolock _l(mReadLock);
         if (doWifiBooleanCommand("REMOVE_NETWORK %d", network_id)) {
             for (size_t i = 0 ; i < mStationsConfig.size() ; i++) {
@@ -652,7 +629,6 @@ broadcastresult:
 
 void WifiStateMachineActions::Supplicant_Started_exit(void)
 {
-    SLOGV("....Supplicant_Started_exit(): Stop DHCP and clear IP\n");
     request_wifi(DHCP_STOP);
     mNetworkInterface->clearInterfaceAddresses();
     // Update the Wifi Information visible to the user
@@ -676,7 +652,6 @@ void WifiStateMachineActions::Supplicant_Started_exit(void)
 void WifiStateMachineActions::Supplicant_Stopping_enter(void)
 {
     mService->BroadcastState(WS_DISABLING);
-    SLOGD("########### Asking supplicant to terminate\n");
     if (!doWifiBooleanCommand("TERMINATE"))
         request_wifi(WIFI_STOP_SUPPLICANT);
     transitionTo(DRIVER_LOADED_STATE);
@@ -689,7 +664,6 @@ void WifiStateMachineActions::Supplicant_Stopping_enter(void)
  */
 void WifiStateMachineActions::Driver_Started_enter(void)
 {
-    SLOGV(".........driver started state enter....\n");
     // Set country code if available
     // setFrequencyBand();
 //    setNetworkDetailedState(DISCONNECTED);
@@ -742,7 +716,6 @@ stateprocess_t WifiStateMachineActions::Connect_Mode_process(Message *message)
         SLOGV("TODO: Authentication failure\n");
         return SM_HANDLED;
     case SUP_STATE_CHANGE_EVENT:
-        SLOGV("...ConnectMode: Supplicant state change event\n");
         handleSupplicantStateChange(message);
         return SM_HANDLED;
     case CMD_DISCONNECT:
@@ -762,7 +735,6 @@ stateprocess_t WifiStateMachineActions::Connect_Mode_process(Message *message)
         SLOGV("TODO: WifiStateMachine.Connect_Mode_process(network_id=%d);\n", network_id);
         } return SM_HANDLED;
     case NETWORK_CONNECTION_EVENT: {
-        SLOGV("....handleNetworkConnect(%p)\n", message);
         request_wifi(DHCP_DO_REQUEST);
         Mutex::Autolock _l(mReadLock);
         mWifiInformation.bssid = message->string();
@@ -870,7 +842,7 @@ stateprocess_t WifiStateMachineActions::Connected_process(Message *message)
                 mService->BroadcastLinkSpeed(link_speed);
             }
             mService->BroadcastInformation(mWifiInformation);
-            enqueueDelayed(CMD_RSSI_POLL, RSSI_POLL_INTERVAL_MSECS);
+            Connected_enter(); //enqueueDelayed(CMD_RSSI_POLL, RSSI_POLL_INTERVAL_MSECS);
         }
         return SM_HANDLED;
     }
@@ -946,12 +918,7 @@ WifiStateMachine::WifiStateMachine(const char *interface, WifiService *servicep)
 {
     mNetworkInterface = new NetworkInterface(this, mInterface);
     request_wifi(DHCP_STOP);
-    int ret = request_wifi(WIFI_STOP_SUPPLICANT);
-
-    // Ensure we've terminated DHCP and the wpa_supplicant
-    // The DHCP state machine ensures that the old dhcp is stopped
-    SLOGV("Stopping supplicant, result=%d\n", ret);
-
+    request_wifi(WIFI_STOP_SUPPLICANT);
     ADD_ITEMS(mStateMap);
     //transitionTo(INITIAL_STATE);
     if (request_wifi(WIFI_IS_DRIVER_LOADED))
@@ -975,14 +942,12 @@ WifiStateMachine::WifiStateMachine(const char *interface, WifiService *servicep)
 void WifiStateMachine::invoke_enter(ENTER_EXIT_PROTO fn)
 {
     typedef void (WifiStateMachineActions::*WENTER_EXIT_PROTO)(void);
-    printf ("HIGHE\n");
     if (fn)
         (static_cast<WifiStateMachineActions *>(this)->*static_cast<WENTER_EXIT_PROTO>(fn))();
 }
 stateprocess_t WifiStateMachine::invoke_process(PROCESS_PROTO fn, Message *m)
 {
     typedef stateprocess_t (WifiStateMachineActions::*WPROCESS_PROTO)(Message *);
-    printf ("HIGHP\n");
     if (!fn)
         return SM_NOT_HANDLED;
     return (static_cast<WifiStateMachineActions *>(this)->*static_cast<WPROCESS_PROTO>(fn))(m);
@@ -1012,7 +977,6 @@ static bool isConnecting(int state)
 
 void WifiStateMachine::handleSupplicantStateChange(Message *message)
 {
-//    SLOGV("....TODO: handleSupplicantStatechange\n");
     Mutex::Autolock _l(mReadLock);
     mWifiInformation.supplicant_state = message->arg2();
     mWifiInformation.network_id = -1;

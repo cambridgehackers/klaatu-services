@@ -36,6 +36,7 @@ protected:
     String8        doWifiStringCommand(const char *fmt, ...);
     bool           doWifiBooleanCommand(const char *fmt, ...);
     void           readNetworkVariables(ConfiguredStation& station);
+    void           setStatus(const char *command, int network_id, ConfiguredStation::Status astatus);
     bool           runDhcp(void);
     virtual const char *msgStr(int msg_id);
 
