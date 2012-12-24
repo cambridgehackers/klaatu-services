@@ -11,7 +11,7 @@ LOCAL_SRC_FILES:= \
 LOCAL_MODULE:= klaatu_wifiservice
 LOCAL_MODULE_TAGS:=optional
 
-LOCAL_C_INCLUDES += $(LOCAL_PATH)/../../include
+LOCAL_C_INCLUDES += $(LOCAL_PATH)/../../include external/wpa_supplicant_8
 LOCAL_SHARED_LIBRARIES := libcutils libbinder libutils libklaatu_wifi libhardware libhardware_legacy libnetutils
 
 include $(BUILD_EXECUTABLE)

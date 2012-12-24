@@ -13,6 +13,8 @@
 #include <hardware_legacy/wifi.h>
 #include <netutils/dhcp.h>
 #include <utils/String8.h>
+#define BIT(x) (1 << (x))      /* needed for wpa supplicant defs.h */
+#include <src/common/defs.h>   /* WPA_xxx names from external/wpa_supplicant_x */
 
 #include "WifiDebug.h"
 #define FSM_ACTION_CODE
@@ -226,7 +228,7 @@ String8 WifiStateMachine::doWifiStringCommand(const char *fmt, va_list args)
     if (reply_len > 0 && reply[reply_len-1] == '\n')
 	reply_len--;
     reply[reply_len] = 0;
-    SLOGV(".....Reply: %s\n", reply);
+    //SLOGV(".....Reply: %s\n", reply);
     return String8(reply);
 }
 
@@ -445,26 +447,6 @@ int WifiStateMachine::findIndexByNetworkId(int network_id)
     return -1;
 }
 
-// These enumerations match the order defined in SupplicantState.java
-// which eventually match "defs.h" from wpa_supplicant
-// But not really very well - it seems that Android has been messing around...
-// with the order.  My guess is that this will change in the future.
-enum {
-   SSTATE_DISCONNECTED = 0,  // Copied from "defs.h" in wpa_supplicant.c
-   SSTATE_INTERFACE_DISABLED,   // 1. The network interface is disabled
-   SSTATE_INACTIVE,             // 2. No enabled networks in the configuration
-   SSTATE_SCANNING,             // 3. Scanning for a network
-   SSTATE_AUTHENTICATING,       // 4. Driver authentication with the BSS
-   SSTATE_ASSOCIATING,          // 5. Driver associating with BSS (ap_scan=1)
-   SSTATE_ASSOCIATED,           // 6. Association successfully completed
-   SSTATE_FOUR_WAY_HANDSHAKE,   // 7. WPA 4-way key handshake has started
-   SSTATE_GROUP_HANDSHAKE,      // 8. WPA 4-way key completed; group rekeying started
-   SSTATE_COMPLETED,            // 9. All authentication is complete.  Now DHCP!
-   SSTATE_DORMANT,              // 10. Android-specific state when client issues DISCONNECT
-   SSTATE_UNINITIALIZED,        // 11. Android-specific state where wpa_supplicant not running
-   SSTATE_INVALID               // 12. Pseudo-state; should not be seen
-};
-
 /* This superclass state encapsulates all of:
      DriverStarting, DriverStopping, DriverStarted, DriverStarted
      ScanMode ConnectMode Connecting, Disconnected, Connected, Disconnecting
@@ -679,7 +661,7 @@ void WifiStateMachineActions::Supplicant_Started_exit(void)
     mWifiInformation.bssid = "";
     mWifiInformation.ssid = "";
     mWifiInformation.network_id = -1;
-    mWifiInformation.supplicant_state = SSTATE_UNINITIALIZED;
+    mWifiInformation.supplicant_state = WPA_INTERFACE_DISABLED;
     mWifiInformation.rssi = -9999;
     mWifiInformation.link_speed = -1;
     mService->BroadcastInformation(mWifiInformation);
@@ -702,7 +684,7 @@ void WifiStateMachineActions::Supplicant_Stopping_enter(void)
 
 /*
   The Driver Start/Stop states are all about controlling if the
-  interface is running or not (wpa_state=INTERFACE_DISABLED).
+  interface is running or not (wpa_state=WPA_INTERFACE_DISABLED).
   This is changed with the wpa_cli command "driver start" and "driver stop"
  */
 void WifiStateMachineActions::Driver_Started_enter(void)
@@ -739,7 +721,7 @@ stateprocess_t WifiStateMachineActions::Driver_Stopping_process(Message *message
 {
     if (message->command() == SUP_STATE_CHANGE_EVENT) {
         handleSupplicantStateChange(message);
-        if (mWifiInformation.supplicant_state != SSTATE_INTERFACE_DISABLED)
+        if (mWifiInformation.supplicant_state != WPA_INTERFACE_DISABLED)
             return SM_HANDLED;
     }
     return SM_DEFAULT;
@@ -1021,8 +1003,8 @@ void WifiStateMachine::Register(const sp<IWifiClient>& client, int flags)
 static bool isConnecting(int state)
 {
     switch (state) {
-    case SSTATE_ASSOCIATING: case SSTATE_AUTHENTICATING: case SSTATE_ASSOCIATED:
-    case SSTATE_FOUR_WAY_HANDSHAKE: case SSTATE_GROUP_HANDSHAKE: case SSTATE_COMPLETED:
+    case WPA_ASSOCIATING: case WPA_AUTHENTICATING: case WPA_ASSOCIATED:
+    case WPA_4WAY_HANDSHAKE: case WPA_GROUP_HANDSHAKE: case WPA_COMPLETED:
         return true;
     }
     return false;
@@ -1033,10 +1015,10 @@ void WifiStateMachine::handleSupplicantStateChange(Message *message)
 //    SLOGV("....TODO: handleSupplicantStatechange\n");
     Mutex::Autolock _l(mReadLock);
     mWifiInformation.supplicant_state = message->arg2();
-    mWifiInformation.network_id = SSTATE_INVALID;
+    mWifiInformation.network_id = -1;
     if (isConnecting(mWifiInformation.supplicant_state))
         mWifiInformation.network_id = message->arg1();
-    if (mWifiInformation.supplicant_state == SSTATE_ASSOCIATING)
+    if (mWifiInformation.supplicant_state == WPA_ASSOCIATING)
         mWifiInformation.bssid = message->string();
     mService->BroadcastInformation(mWifiInformation);
 }
