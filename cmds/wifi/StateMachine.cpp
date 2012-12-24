@@ -4,28 +4,14 @@
 
 #include "WifiDebug.h"
 #include "StateMachine.h"
+#define FSM_INITIALIZE_CODE
+#include "WifiStateMachine.h"
 
 namespace android {
 
-// ---------------------------------------------------------------------------
-
-// Subtract current from mRunTime and return the value in milliseconds
-
-void Message::setDelay(int ms)
+StateMachine::StateMachine() : mCurrentState(0), mTargetState(0)
 {
-    mExecuteTime = systemTime() + ms2ns(ms);
-}
-
-// ---------------------------------------------------------------------------
-
-StateMachine::StateMachine()
-    : mCurrentState(0)
-    , mTargetState(0)
-{
-}
-
-StateMachine::~StateMachine()
-{
+    mStateMap = (State *)malloc(STATE_MAX * sizeof(State));
 }
 
 void StateMachine::enqueue(Message *message)
@@ -35,75 +21,67 @@ void StateMachine::enqueue(Message *message)
     mCondition.signal();
 }
 
-void StateMachine::enqueue(int command, int arg1, int arg2)
-{
-    enqueue(new Message(command, arg1, arg2));
-}
-
-void StateMachine::enqueueDelayed(Message *message, int ms)
+void StateMachine::enqueueDelayed(int command, int delay, int arg1, int arg2)
 {
     Mutex::Autolock _l(mLock);
-    message->setDelay(ms);
+    Message *message = new Message(command, arg1, arg2);
+    message->setDelay(delay);
     mDelayedMessages.push(message);
     mCondition.signal();
 }
 
-void StateMachine::enqueueDelayed(int command, int delay, int arg1, int arg2)
-{
-    enqueueDelayed(new Message(command, arg1, arg2), delay);
-}
-
 // Return true if 'a' is a parent of 'b' or if 'a' == 'b'
-static bool isParentOf(State *a, State *b)
+static bool isParentOf(State *mStateMap, int a, int b)
 {
     if (!a)
 	return true;  // The Null state is always a parent
     while (b) {
 	if (b == a)
 	    return true;
-	b = b->parent();
+	b = mStateMap[b].mParent;
     }
     return false;
 }
 
-static State * findCommonParent(State *a, State *b)
-{
-    if (isParentOf(a,b))
-	return a;
-    while (b) {
-	if (isParentOf(b, a))
-	    return b;
-	b = b->parent();
-    }
-    return NULL;
-}
-
-static void callEnterChain(StateMachine *state_machine, State *parent, State *state)
+static void callEnterChain(StateMachine *state_machine, int parent, int state)
 {
     if (state && state != parent) {
-	callEnterChain(state_machine, parent, state->parent());
-	SLOGV(".............Calling enter on %s\n", state->name());
-	state->enter(state_machine);
+	callEnterChain(state_machine, parent, state_machine->mStateMap[state].mParent);
+	SLOGV(".............Calling enter on %s\n", state_table[state].name);
+        state_machine->invoke_enter(state_machine->mStateMap[state].mEnter);
     }
 }
 
-static void callExitChain(StateMachine *state_machine, State *parent, State *state)
+void StateMachine::transitionTo(int key)
 {
-    while (state && state != parent) {
-	SLOGV(".............Calling exit on %s\n", state->name());
-	state->exit(state_machine);
-	state = state->parent();
+    if (key == CMD_TERMINATE) {
+	mTargetState = 0;
+	return;
     }
+    mTargetState = key;
+    if (!mTargetState)
+	SLOGV("....ERROR: state %d doesn't have a value\n", key);
 }
 
 bool StateMachine::threadLoop()
 {
+    initstates();
     while (!exitPending()) {
-	while (mTargetState != mCurrentState) {
-	    State *parent = findCommonParent(mTargetState, mCurrentState);
+	if (mTargetState != mCurrentState) {
+	    int parent = mCurrentState;
+            if (isParentOf(mStateMap, mTargetState,parent))
+	        parent = mTargetState;
+            else while (parent && !isParentOf(mStateMap, parent, mTargetState)) {
+	    	parent = mStateMap[parent].mParent;
+            }
 	    if (mCurrentState) {
-		SLOGV("......Exiting state %s\n", mCurrentState->name());
-		callExitChain(this, parent, mCurrentState);
+		SLOGV("......Exiting state %s\n", state_table[mCurrentState].name);
+		int state = mCurrentState;
+		while (state && state != parent) {
+		    SLOGV(".............Calling exit on %s\n", state_table[state].name);
+                    invoke_enter(mStateMap[state].mExit);
+	    	    state = mStateMap[state].mParent;
+		}
 	    }
 	    mCurrentState = mTargetState;
 	    if (mDeferedMessages.size() > 0) {
@@ -112,7 +90,7 @@ bool StateMachine::threadLoop()
 		mDeferedMessages.clear();
 	    }
 	    if (mCurrentState) {
-		SLOGV("......Entering state %s\n", mCurrentState->name());
+		SLOGV("......Entering state %s\n", state_table[mCurrentState].name);
 		callEnterChain(this, parent, mCurrentState);
 	    }
 	    else {
@@ -124,99 +102,71 @@ bool StateMachine::threadLoop()
 	mLock.lock();
 	while (mQueuedMessages.size() == 0) {
 	    if (mDelayedMessages.size()) {
-		int ns = processDelayedLocked(); 
+                nsecs_t ns = 0;
+                nsecs_t current = systemTime();
+                for (size_t i = 0 ; i < mDelayedMessages.size() ; i++) {
+	            Message *m = mDelayedMessages[i];
+	            nsecs_t t = m->executeTime();
+	            if (t <= current) {
+	                mDelayedMessages.removeAt(i);
+	                mQueuedMessages.push(m);
+                        goto process_first;
+	            }
+	            t -= current;
+	            if (ns == 0 || t < ns)
+	                ns = t;
+                }
 		if (ns > 0)
 		    mCondition.waitRelative(mLock, ns);
 	    }
 	    else  // Unlimited wait
 		mCondition.wait(mLock);
 	}
-
+process_first:
 	// Process the first message on the queue
 	Message *message = mQueuedMessages[0];
 	mQueuedMessages.removeAt(0);
 	mLock.unlock();
 
-	State *state = mCurrentState;
+	int state = mCurrentState;
 	stateprocess_t result = SM_NOT_HANDLED;
 	const char *msg_str = msgStr(message->command());
 
 	while (state && result == SM_NOT_HANDLED) {
-	    SLOGV("......Processing message %s (%d) in state %s\n", 
-		   (msg_str ? msg_str : "<UNKNOWN>"),
-		   message->command(), state->name());
-	    result = state->process(this, message);
-	    state = state->parent();
+	    SLOGV("......Processing message %s (%d) in state %s\n", msg_str,
+		   message->command(), state_table[state].name);
+	    STATE_TRANSITION *t = state_table[state].tran;
+            result = invoke_process(mStateMap[state].mProcess, message);
+	    state = mStateMap[state].mParent;
+	    if (result == SM_DEFAULT) {
+		result = SM_NOT_HANDLED;
+		while (t && t->state) {
+		    if (t->event == message->command()) {
+			result = SM_DEFER;
+		        if (t->state != DEFER_STATE) {
+		            transitionTo(t->state);
+		            result = SM_HANDLED;
+			}
+			break;
+		    }
+		    t++;
+		}
+	    }
 	}
-
 	switch (result) {
+	case SM_DEFER:
+	    SLOGV(".......Message %s (%d) is being defered by current state\n", msg_str, message->command());
+	    mDeferedMessages.push(message);
+	    break;
+	default:
+	    SLOGV("Warning!  Message %s (%d) not handled by current state %x\n", 
+		   msg_str, message->command(), mCurrentState);
 	case SM_HANDLED:
 	    delete message;
-	    break;
-	case SM_NOT_HANDLED:
-	    SLOGV("Warning!  Message %s (%d) not handled by current state %p\n", 
-		   (msg_str ? msg_str : "<UNKNOWN>"),
-		   message->command(), mCurrentState);
-	    delete message;
-	    break;
-	case SM_DEFER:
-	    SLOGV(".......Message %s (%d) is being defered by current state\n",
- 		   (msg_str ? msg_str : "<UNKNOWN>"), message->command());
-	    mDeferedMessages.push(message);
 	    break;
 	}
     }
     return false;
 }
-
-/* 
-   Return the wait time in nanoseconds.  Also shift messages from the
-   delay queue to the normal queue.  This routine only shifts the first
-   message it finds; it doesn't guarantee that all messages will be shifted.
- */
-
-nsecs_t StateMachine::processDelayedLocked()
-{
-    nsecs_t current = systemTime();
-    nsecs_t delay = 0;
-
-    for (size_t i = 0 ; i < mDelayedMessages.size() ; i++) {
-	Message *m = mDelayedMessages[i];
-	nsecs_t t = m->executeTime();
-	if (t <= current) {
-	    mDelayedMessages.removeAt(i);
-	    mQueuedMessages.push(m);
-	    return 0;
-	}
-	t -= current;
-	if (delay == 0 || t < delay)
-	    delay = t;
-    }
-    return delay;
-}
-
-void StateMachine::transitionTo(int key)
-{
-    if (key == CMD_TERMINATE)
-	mTargetState = NULL;
-    else if (mStateMap.indexOfKey(key) < 0)
-	SLOGV("....ERROR: state %d doesn't have a value\n", key);
-    else
-	mTargetState = mStateMap.valueFor(key);
-}
-
-void StateMachine::add(int command, const char *name, State *state, State *parent)
-{
-    mStateMap.add(command, state);
-    state->setName(name);
-    state->setParent(parent);
-}
-
-const char * StateMachine::msgStr(int)
-{
-    return NULL;
-}
-
-// ---------------------------------------------------------------------------
 
 }; // namespace android

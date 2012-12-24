@@ -5,30 +5,20 @@
 #ifndef _WIFI_SERVICE_H
 #define _WIFI_SERVICE_H
 
-//#include <binder/BinderService.h>
+#include <binder/BinderService.h>
 #include <wifi/IWifiService.h>
-#include <utils/Singleton.h>
 #include <utils/List.h>
 
-#include "WifiStateMachine.h"
-
 namespace android {
-
 class WifiServerClient;
-
+class WifiStateMachine;
 class WifiService : // public BinderService<WifiService>,
 	public BnWifiService,
-	public IBinder::DeathRecipient,
-	public Singleton<WifiService>
+	public IBinder::DeathRecipient
 {
-//    friend class BinderService<WifiService>;
-
 public:
-    // for WifiService
-    static const char *getServiceName() { return "wifi"; }
-
     WifiService();
-    virtual ~WifiService();
+    virtual ~WifiService() {}
 
     // IBinder::DeathRecipient
     virtual void binderDied(const wp<IBinder>& who);
@@ -48,18 +38,11 @@ public:
     void BroadcastLinkSpeed(int link_speed);
 
 private:
-    WifiServerClient * getClientLocked(const sp<IWifiClient>&);
-
-private:
     mutable Mutex     mLock;
     WifiStateMachine *mWifiStateMachine;
     KeyedVector< wp<IBinder>, WifiServerClient *> mClients;
+    WifiState         mState;
  };
-
-// ---------------------------------------------------------------------------
-
 }; // namespace android
 
-
 #endif // _WIFI_SERVICE_H
-

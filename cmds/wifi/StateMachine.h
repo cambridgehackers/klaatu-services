@@ -31,7 +31,9 @@ public:
     const String8& string() const { return mString; }
 
     nsecs_t executeTime() const { return mExecuteTime; }
-    void    setDelay(int ms);
+    void    setDelay(int ms) {
+        mExecuteTime = systemTime() + ms2ns(ms);
+    }
 
 private:
     int            mCommand;
@@ -42,26 +44,17 @@ private:
 
 // ---------------------------------------------------------------------------
 
-enum stateprocess_t { SM_HANDLED, SM_NOT_HANDLED, SM_DEFER };
+enum stateprocess_t { SM_DEFAULT, SM_HANDLED, SM_NOT_HANDLED, SM_DEFER };
 
+typedef void (StateMachine::*ENTER_EXIT_PROTO)(void);
+typedef stateprocess_t (StateMachine::*PROCESS_PROTO)(Message *);
 class State {
 public:
-    State() : mName("Default"), mParent(0) {}
-    virtual ~State() {}
-    
-    virtual void           enter(StateMachine *) {}
-    virtual stateprocess_t process(StateMachine *, Message *) { return SM_NOT_HANDLED; }
-    virtual void           exit(StateMachine *) {}
-
-    const char *name() const { return mName.string(); }
-    void setName(const char *name) { mName = name; }
-
-    State *parent() const { return mParent; }
-    void setParent(State *parent) { mParent = parent; }
-
-private:
-    String8 mName;
-    State   *mParent;
+    ENTER_EXIT_PROTO mEnter;
+    PROCESS_PROTO    mProcess;
+    ENTER_EXIT_PROTO mExit;
+    int              mParent;
+    const char *     mName;
 };
 
 // ---------------------------------------------------------------------------
@@ -71,37 +64,34 @@ public:
     enum { CMD_TERMINATE = -1 };
 
     StateMachine();
-    virtual ~StateMachine();
+    virtual ~StateMachine() {}
 
     void transitionTo(int);
     void enqueue(Message *);
-    void enqueue(int command, int arg1=-1, int arg2=-1); 
-    void enqueueDelayed(Message *, int delay);
+    void enqueue(int command, int arg1=-1, int arg2=-1) {
+        enqueue(new Message(command, arg1, arg2));
+    }
     void enqueueDelayed(int command, int delay, int arg1=-1, int arg2=-1);
+    State * mStateMap;
+    virtual void invoke_enter(ENTER_EXIT_PROTO) = 0;
+    virtual stateprocess_t invoke_process(PROCESS_PROTO, Message *) = 0;
 
 protected:
-    void add(int, const char *, State *, State *parent=0);
-    virtual const char *msgStr(int msg_id);
+    virtual const char *msgStr(int msg_id) { return ""; }
 
 private:
-    virtual bool threadLoop();
-    nsecs_t processDelayedLocked();
-
-private:
+    virtual bool      threadLoop();
     mutable Mutex     mLock;  // Protects mQueuedMessages
     mutable Condition mCondition;
-    State            *mCurrentState;
-    State            *mTargetState;
+    int               mCurrentState;
+    int               mTargetState;
 
-    KeyedVector<int, State *> mStateMap;
     Vector<Message *> mQueuedMessages;
     Vector<Message *> mDeferedMessages;
     Vector<Message *> mDelayedMessages;
 };
 
 // ---------------------------------------------------------------------------
-
 }; // namespace android
-
 
 #endif // _STATEMACHINE_H

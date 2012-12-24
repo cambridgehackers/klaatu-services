@@ -3,16 +3,9 @@ include $(CLEAR_VARS)
 
 LOCAL_SRC_FILES:= \
 	klaatuwifi_main.cpp \
-	WifiService.cpp \
-	DaemonConnector.cpp \
 	StateMachine.cpp \
 	StringUtils.cpp \
-	WifiMonitor.cpp \
-	WifiCommands.cpp \
-	ScannedStations.cpp \
-	WifiConfigStore.cpp \
 	NetworkInterface.cpp \
-	DhcpStateMachine.cpp \
 	WifiStateMachine.cpp
 
 LOCAL_MODULE:= klaatu_wifiservice
