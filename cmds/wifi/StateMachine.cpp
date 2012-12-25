@@ -1,7 +1,9 @@
+
 /*
    State Machine logic
  */
 
+#include <sys/socket.h>
 #include "WifiDebug.h"
 #include "StateMachine.h"
 #define FSM_INITIALIZE_CODE
@@ -14,11 +16,34 @@ StateMachine::StateMachine() : mCurrentState(0), mTargetState(0)
     mStateMap = (State *)malloc(STATE_MAX * sizeof(State));
 }
 
+static int xsockets[2];
+char xbuf[1024];
+
+void xopen()
+{
+}
+
+void xwrite()
+{
+        close(xsockets[1]);
+}
+
+void xread()
+{
+        if (read(xsockets[0], xbuf, 1024) < 0)
+            perror("reading stream message");
+        printf("-->%s\n", xbuf);
+        close(xsockets[0]);
+}
+
+
 void StateMachine::enqueue(Message *message)
 {
     Mutex::Autolock _l(mLock);
-    mQueuedMessages.push(message);
-    mCondition.signal();
+    //mQueuedMessages.push(message);
+    //mCondition.signal();
+        if (write(xsockets[1], message, sizeof(message)) < 0)
+            perror("writing stream message");
 }
 
 void StateMachine::enqueueDelayed(int command, int delay)
@@ -65,6 +90,15 @@ void StateMachine::transitionTo(int key)
 
 bool StateMachine::threadLoop()
 {
+static fd_set readfds;
+static struct timeval tv;
+    if (socketpair(AF_UNIX, SOCK_STREAM, 0, xsockets) < 0) {
+        perror("opening stream socket pair");
+        exit(1);
+    }
+    FD_ZERO(&readfds);
+    FD_SET(xsockets[0], &readfds);
+    static int nfd = xsockets[0] + 1;
     initstates();
     while (!exitPending()) {
 	if (mTargetState != mCurrentState) {
@@ -84,10 +118,13 @@ bool StateMachine::threadLoop()
 		}
 	    }
 	    mCurrentState = mTargetState;
-	    if (mDeferedMessages.size() > 0) {
+	    while (mDeferedMessages.size() > 0) {
 		Mutex::Autolock _l(mLock);
-		mQueuedMessages.insertVectorAt(mDeferedMessages, 0);
-		mDeferedMessages.clear();
+	        Message *m = mDeferedMessages[0];
+		mDeferedMessages.removeAt(0);
+                enqueue(m);
+		//mQueuedMessages.insertVectorAt(mDeferedMessages, 0);
+		//mDeferedMessages.clear();
 	    }
 	    if (mCurrentState) {
 		SLOGV("......Entering state %s\n", state_table[mCurrentState].name);
@@ -100,7 +137,9 @@ bool StateMachine::threadLoop()
 	}
 	
 	mLock.lock();
-	while (mQueuedMessages.size() == 0) {
+#if 0
+	while (1) {
+	    if (mQueuedMessages.size()) break;
 	    if (mDelayedMessages.size()) {
                 nsecs_t ns = 0;
                 nsecs_t current = systemTime();
@@ -122,10 +161,38 @@ bool StateMachine::threadLoop()
 	    else  // Unlimited wait
 		mCondition.wait(mLock);
 	}
+#else
+{
+while (1) {
+tv.tv_sec = 2;
+tv.tv_usec = 100000;
+int rv = select(nfd, &readfds, NULL, NULL, &tv);
+
+if (rv == -1) {
+    perror("select"); // error occurred in select()
+} else if (rv == 0) {
+    //printf("Timeout occurred!  No data after 10.5 seconds.\n");
+    if (mDelayedMessages.size()) {
+        Message *m = mDelayedMessages[0];
+        mDelayedMessages.removeAt(0);
+        enqueue(m);
+    }
+} else {
+    // one or both of the descriptors have data
+    if (FD_ISSET(xsockets[0], &readfds)) {
+        printf ("got data\n");
+break;
+    }
+}
+}
+}
+#endif
 process_first:
 	// Process the first message on the queue
-	Message *message = mQueuedMessages[0];
-	mQueuedMessages.removeAt(0);
+	Message *message; // = mQueuedMessages[0];
+        if (read(xsockets[0], &message, sizeof(message)) < 0)
+            perror("reading stream message");
+	//mQueuedMessages.removeAt(0);
 	mLock.unlock();
 
 	int state = mCurrentState;

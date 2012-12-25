@@ -8,7 +8,6 @@
 
 #include <stdio.h>
 #include <ctype.h>
-#include <sys/socket.h>
 #include <cutils/properties.h>
 #include <hardware_legacy/wifi.h>
 #include <netutils/dhcp.h>
@@ -996,32 +995,5 @@ void WifiStateMachine::enqueue_network_update(const ConfiguredStation& cs)
 {
     enqueue(new AddOrUpdateNetworkMessage(cs));
 }
-
-int xsockets[2];
-char xbuf[1024];
-
-void xopen()
-{
-    if (socketpair(AF_UNIX, SOCK_STREAM, 0, xsockets) < 0) {
-        perror("opening stream socket pair");
-        exit(1);
-    }
-}
-
-void xwrite()
-{
-        if (write(xsockets[1], xbuf, sizeof(xbuf)) < 0)
-            perror("writing stream message");
-        close(xsockets[1]);
-}
-
-void xread()
-{
-        if (read(xsockets[0], xbuf, 1024) < 0)
-            perror("reading stream message");
-        printf("-->%s\n", xbuf);
-        close(xsockets[0]);
-}
-
 
 };  // namespace android
