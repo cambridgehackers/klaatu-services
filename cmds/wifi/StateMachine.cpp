@@ -22,17 +22,14 @@ StateMachine::StateMachine() : mCurrentState(0), mTargetState(0)
 
 void StateMachine::enqueue(Message *message)
 {
-    //Mutex::Autolock _l(mLock);
-    //mQueuedMessages.push(message);
     if (write(xsockets[1], &message, sizeof(message)) < 0)
         SLOGV("writing stream message");
 }
 
 void StateMachine::enqueueDelayed(int command, int delay)
 {
-    Mutex::Autolock _l(mLock);
     Message *message = new Message(command);
-    message->setDelay(delay);
+    message->mExecuteTime = systemTime() + ms2ns(delay);
     mDelayedMessages.push(message);
 }
 

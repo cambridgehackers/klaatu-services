@@ -24,17 +24,10 @@ public:
     Message(int command, int arg1 = -1, int arg2 = -1, const String8& str=String8()) 
 	: mCommand(command), mArg1(arg1), mArg2(arg2), mString(str) {}
     virtual ~Message() {}
-
     int command() const { return mCommand; }
     int arg1() const { return mArg1; }
     int arg2() const { return mArg2; }
-    const String8& string() const { return mString; }
-
-    nsecs_t executeTime() const { return mExecuteTime; }
-    void    setDelay(int ms) {
-        mExecuteTime = systemTime() + ms2ns(ms);
-    }
-
+    //const String8& string() const { return mString; }
 private:
     int            mCommand;
     int            mArg1, mArg2;
@@ -79,12 +72,10 @@ protected:
 
 private:
     virtual bool      threadLoop();
-    mutable Mutex     mLock;  // Protects mQueuedMessages
     int               mCurrentState;
     int               mTargetState;
     int               xsockets[2];
 
-    Vector<Message *> mQueuedMessages;
     Vector<Message *> mDeferedMessages;
     Vector<Message *> mDelayedMessages;
 };
