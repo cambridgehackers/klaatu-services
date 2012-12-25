@@ -75,6 +75,7 @@ bool StateMachine::threadLoop()
     initstates();
     while (!exitPending()) {
         Message *message = NULL;
+	stateprocess_t result = SM_NOT_HANDLED;
 	if (mTargetState != mCurrentState) {
 	    int parent = mCurrentState;
             if (isParentOf(mStateMap, mTargetState,parent))
@@ -125,10 +126,8 @@ bool StateMachine::threadLoop()
             }
         }
 
-	int state = mCurrentState;
-	stateprocess_t result = SM_NOT_HANDLED;
 	const char *msg_str = msgStr(message->command());
-
+	int state = mCurrentState;
 	while (state && result == SM_NOT_HANDLED) {
 	    SLOGV("......Processing message %s (%d) in state %s\n", msg_str,
 		   message->command(), state_table[state].name);
