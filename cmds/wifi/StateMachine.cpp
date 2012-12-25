@@ -1,4 +1,5 @@
 
+#define NEWPIPE
 /*
    State Machine logic
  */
@@ -14,41 +15,30 @@ namespace android {
 StateMachine::StateMachine() : mCurrentState(0), mTargetState(0)
 {
     mStateMap = (State *)malloc(STATE_MAX * sizeof(State));
+    if (socketpair(AF_UNIX, SOCK_STREAM, 0, xsockets) < 0) {
+        SLOGV("opening stream socket pair\n");
+        exit(1);
+    }
+SLOGV("socket pair fd %d:%d\n", xsockets[0], xsockets[1]);
 }
-
-static int xsockets[2];
-char xbuf[1024];
-
-void xopen()
-{
-}
-
-void xwrite()
-{
-        close(xsockets[1]);
-}
-
-void xread()
-{
-        if (read(xsockets[0], xbuf, 1024) < 0)
-            perror("reading stream message");
-        printf("-->%s\n", xbuf);
-        close(xsockets[0]);
-}
-
 
 void StateMachine::enqueue(Message *message)
 {
     Mutex::Autolock _l(mLock);
-    //mQueuedMessages.push(message);
-    //mCondition.signal();
-        if (write(xsockets[1], message, sizeof(message)) < 0)
-            perror("writing stream message");
+    mQueuedMessages.push(message);
+SLOGV("before write %x message %p\n", xsockets[1], message);
+#ifdef NEWPIPE
+        if (write(xsockets[1], &message, sizeof(message)) < 0)
+            SLOGV("writing stream message");
+#else
+    mCondition.signal();
+#endif
 }
 
 void StateMachine::enqueueDelayed(int command, int delay)
 {
     Mutex::Autolock _l(mLock);
+SLOGV("enqDelay %d %d\n", command, delay);
     Message *message = new Message(command);
     message->setDelay(delay);
     mDelayedMessages.push(message);
@@ -90,15 +80,10 @@ void StateMachine::transitionTo(int key)
 
 bool StateMachine::threadLoop()
 {
-static fd_set readfds;
-static struct timeval tv;
-    if (socketpair(AF_UNIX, SOCK_STREAM, 0, xsockets) < 0) {
-        perror("opening stream socket pair");
-        exit(1);
-    }
+    fd_set readfds;
+    struct timeval tv;
+
     FD_ZERO(&readfds);
-    FD_SET(xsockets[0], &readfds);
-    static int nfd = xsockets[0] + 1;
     initstates();
     while (!exitPending()) {
 	if (mTargetState != mCurrentState) {
@@ -118,14 +103,19 @@ static struct timeval tv;
 		}
 	    }
 	    mCurrentState = mTargetState;
-	    while (mDeferedMessages.size() > 0) {
+#if 0
+	    if (mDeferedMessages.size() > 0) {
 		Mutex::Autolock _l(mLock);
-	        Message *m = mDeferedMessages[0];
-		mDeferedMessages.removeAt(0);
-                enqueue(m);
-		//mQueuedMessages.insertVectorAt(mDeferedMessages, 0);
-		//mDeferedMessages.clear();
+		mQueuedMessages.insertVectorAt(mDeferedMessages, 0);
+		mDeferedMessages.clear();
 	    }
+#else
+	    while (mDeferedMessages.size() > 0) {
+ 	        Message *m = mDeferedMessages[0];
+ 		mDeferedMessages.removeAt(0);
+                enqueue(m);
+	    }
+#endif
 	    if (mCurrentState) {
 		SLOGV("......Entering state %s\n", state_table[mCurrentState].name);
 		callEnterChain(this, parent, mCurrentState);
@@ -136,19 +126,52 @@ static struct timeval tv;
 	    }
 	}
 	
+        Message *message = NULL;
+#ifdef NEWPIPE
+while (1) {
+    FD_SET(xsockets[0], &readfds);
+    int nfd = xsockets[0] + 1;
+    tv.tv_sec = 2;
+    tv.tv_usec = 100000;
+    //SLOGV("before Select\n");
+    int rv = select(nfd, &readfds, NULL, NULL, &tv);
+    SLOGV("after Select %d errno %d isset %d\n", rv, errno, FD_ISSET(xsockets[0], &readfds));
+    if (rv == -1) {
+        SLOGV("error in select select"); // error occurred in select()
+    } else if (rv == 0) {
+        //SLOGV("Timeout occurred!  %d\n", mDelayedMessages.size(), mDeferedMessages.size());
+        if (mDelayedMessages.size()) {
+            message = mDelayedMessages[0];
+            mDelayedMessages.removeAt(0);
+            //enqueue(message);
 	mLock.lock();
-#if 0
-	while (1) {
-	    if (mQueuedMessages.size()) break;
+            goto process_first;
+        }
+    } else {
+        // one or both of the descriptors have data
+        if (FD_ISSET(xsockets[0], &readfds)) {
+            printf ("got data\n");
+            int len = 0;
+            if ((len = read(xsockets[0], &message, sizeof(message))) < 0)
+                SLOGV("error reading stream message\n");
+            SLOGV("after read %x len %d message %p\n", xsockets[0], len, message);
+            break;
+        }
+    }
+}
+	mLock.lock();
+#else
+	mLock.lock();
+	while (mQueuedMessages.size() == 0) {
 	    if (mDelayedMessages.size()) {
                 nsecs_t ns = 0;
                 nsecs_t current = systemTime();
                 for (size_t i = 0 ; i < mDelayedMessages.size() ; i++) {
-	            Message *m = mDelayedMessages[i];
-	            nsecs_t t = m->executeTime();
+	            message = mDelayedMessages[i];
+	            nsecs_t t = message->executeTime();
 	            if (t <= current) {
 	                mDelayedMessages.removeAt(i);
-	                mQueuedMessages.push(m);
+	                //mQueuedMessages.push(message);
                         goto process_first;
 	            }
 	            t -= current;
@@ -161,38 +184,11 @@ static struct timeval tv;
 	    else  // Unlimited wait
 		mCondition.wait(mLock);
 	}
-#else
-{
-while (1) {
-tv.tv_sec = 2;
-tv.tv_usec = 100000;
-int rv = select(nfd, &readfds, NULL, NULL, &tv);
-
-if (rv == -1) {
-    perror("select"); // error occurred in select()
-} else if (rv == 0) {
-    //printf("Timeout occurred!  No data after 10.5 seconds.\n");
-    if (mDelayedMessages.size()) {
-        Message *m = mDelayedMessages[0];
-        mDelayedMessages.removeAt(0);
-        enqueue(m);
-    }
-} else {
-    // one or both of the descriptors have data
-    if (FD_ISSET(xsockets[0], &readfds)) {
-        printf ("got data\n");
-break;
-    }
-}
-}
-}
+	message = mQueuedMessages[0];
+	mQueuedMessages.removeAt(0);
 #endif
-process_first:
 	// Process the first message on the queue
-	Message *message; // = mQueuedMessages[0];
-        if (read(xsockets[0], &message, sizeof(message)) < 0)
-            perror("reading stream message");
-	//mQueuedMessages.removeAt(0);
+process_first:
 	mLock.unlock();
 
 	int state = mCurrentState;

@@ -83,6 +83,7 @@ private:
     mutable Condition mCondition;
     int               mCurrentState;
     int               mTargetState;
+    int               xsockets[2];
 
     Vector<Message *> mQueuedMessages;
     Vector<Message *> mDeferedMessages;
