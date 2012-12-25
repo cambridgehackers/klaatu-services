@@ -360,6 +360,13 @@ void WifiStateMachineActions::Driver_Unloading_enter(void)
     mService->BroadcastState(request_wifi(WIFI_UNLOAD_DRIVER) ? WS_UNKNOWN : WS_DISABLED);
 }
 
+static void restartSupplicant(WifiStateMachine *wsm)
+{
+    SLOGD("Restarting supplicant\n");
+    wsm->request_wifi(WIFI_STOP_SUPPLICANT);
+    wsm->enqueueDelayed(CMD_START_SUPPLICANT, SUPPLICANT_RESTART_INTERVAL_MSECS);
+}
+
 /*
   The supplicant states ensure that the wpa_supplicant program is
   running.  This is tied in tightly to the property system, using the
@@ -368,11 +375,9 @@ void WifiStateMachineActions::Driver_Unloading_enter(void)
 stateprocess_t WifiStateMachineActions::Supplicant_Starting_process(Message *message)
 {
     if (message->command() == SUP_DISCONNECTION_EVENT) {
-        if (++mSupplicantRestartCount <= 5) {
-            SLOGD("Restarting supplicant\n");
-            request_wifi(WIFI_STOP_SUPPLICANT);
-            enqueueDelayed(CMD_START_SUPPLICANT, SUPPLICANT_RESTART_INTERVAL_MSECS);
-        } else {
+        if (++mSupplicantRestartCount <= 5)
+            restartSupplicant(this);
+        else {
             SLOGD("Failed to start supplicant; unloading driver\n");
             mSupplicantRestartCount = 0;
             enqueue(CMD_UNLOAD_DRIVER);
@@ -407,7 +412,7 @@ stateprocess_t WifiStateMachineActions::Supplicant_Starting_process(Message *mes
         cs.status = ConfiguredStation::ENABLED;
         if (result.size() > 3) {
             if (!strcmp(result[3].string(), "[CURRENT]"))
-            cs.status = ConfiguredStation::CURRENT;
+                cs.status = ConfiguredStation::CURRENT;
             else if (!strcmp(result[3].string(), "[DISABLED]")) {
                 cs.status = ConfiguredStation::DISABLED;
                 if (doWifiBooleanCommand("ENABLE_NETWORK %d", cs.network_id)) {
@@ -439,16 +444,38 @@ int WifiStateMachine::findIndexByNetworkId(int network_id)
 
 void WifiStateMachine::setStatus(const char *command, int network_id, ConfiguredStation::Status astatus)
 {
-        Mutex::Autolock _l(mReadLock);
-        if (doWifiBooleanCommand(command, network_id)) {
-            for (size_t i = 0 ; i < mStationsConfig.size() ; i++) {
-                ConfiguredStation& station(mStationsConfig.editItemAt(i));
-                if (station.network_id == network_id)
+    Mutex::Autolock _l(mReadLock);
+    if (doWifiBooleanCommand(command, network_id)) {
+        for (size_t i = 0 ; i < mStationsConfig.size() ; i++) {
+            ConfiguredStation& station(mStationsConfig.editItemAt(i));
+            if (station.network_id == network_id) {
+                if (strncmp(command, "REMOVE_NETWORK", strlen("REMOVE_NETWORK")))
                     station.status = astatus;
-                else if (!strncmp(command, "SELECT_NETWORK", strlen("SELECT_NETWORK")))
-                    station.status = ConfiguredStation::DISABLED;
+                else {
+                    int status = mStationsConfig.itemAt(i).status;
+                    mStationsConfig.removeAt(i);
+                    if (status == ConfiguredStation::CURRENT) {
+                        /* Enable other networks if we remove the active network */
+                        for (size_t i = 0 ; i < mStationsConfig.size() ; i++) {
+                            ConfiguredStation& cs = mStationsConfig.editItemAt(i);
+                            if (cs.status == ConfiguredStation::DISABLED && 
+                                doWifiBooleanCommand("ENABLE_NETWORK %d", cs.network_id)) {
+                                cs.status = ConfiguredStation::ENABLED;
+                            }
+                        }
+                    }
+                    break;
+                }
             }
+            else if (!strncmp(command, "SELECT_NETWORK", strlen("SELECT_NETWORK")))
+                station.status = ConfiguredStation::DISABLED;
         }
+        if (!strncmp(command, "REMOVE_NETWORK", strlen("REMOVE_NETWORK"))) {
+            doWifiBooleanCommand("AP_SCAN 1");
+            doWifiBooleanCommand("SAVE_CONFIG");
+        }
+    }
+    mService->BroadcastConfiguredStations(mStationsConfig);
 }
 /* This superclass state encapsulates all of:
      DriverStarting, DriverStopping, DriverStarted, DriverStarted
@@ -459,14 +486,13 @@ stateprocess_t WifiStateMachineActions::Supplicant_Started_process(Message *mess
     int network_id = message->arg1();
     switch (message->command()) {
     case SUP_DISCONNECTION_EVENT:
-        request_wifi(WIFI_STOP_SUPPLICANT);
+        restartSupplicant(this);
         request_wifi(WIFI_CLOSE_SUPPLICANT);
         // mNetworkInfo.setIsAvailable(false);
         Supplicant_Started_exit();
         // sendSupplicantConnectionChangedBroadcast(false);
         // mSupplicantStateTracker.sendMessage(CMD_RESET_SUPPLICANT_STATE);
         // mWpsStateMachine.sendMessage(CMD_RESET_WPS_STATE);
-        enqueueDelayed(CMD_START_SUPPLICANT, SUPPLICANT_RESTART_INTERVAL_MSECS);
         break;
     case SUP_SCAN_RESULTS_EVENT: {
         Mutex::Autolock _l(mReadLock);
@@ -590,41 +616,15 @@ stateprocess_t WifiStateMachineActions::Supplicant_Started_process(Message *mess
     case CMD_ENABLE_NETWORK:
         setStatus((message->command() != CMD_ENABLE_NETWORK || message->arg2() != 0)
              ? "SELECT_NETWORK %d" : "ENABLE_NETWORK %d", network_id, ConfiguredStation::ENABLED);
-        goto broadcastresult;
+        return SM_HANDLED;
     case CMD_DISABLE_NETWORK:
         setStatus("DISABLE_NETWORK %d", network_id, ConfiguredStation::DISABLED);
-        goto broadcastresult;
-    case CMD_REMOVE_NETWORK: {
-        Mutex::Autolock _l(mReadLock);
-        if (doWifiBooleanCommand("REMOVE_NETWORK %d", network_id)) {
-            for (size_t i = 0 ; i < mStationsConfig.size() ; i++) {
-                const ConfiguredStation& cs = mStationsConfig.itemAt(i);
-                if (cs.network_id == network_id) {
-                    int status = mStationsConfig.itemAt(i).status;
-                    mStationsConfig.removeAt(i);
-                    if (status == ConfiguredStation::CURRENT) {
-                        /* Enable other networks if we remove the active network */
-                        for (size_t i = 0 ; i < mStationsConfig.size() ; i++) {
-                            ConfiguredStation& cs = mStationsConfig.editItemAt(i);
-                            if (cs.status == ConfiguredStation::DISABLED && 
-                                doWifiBooleanCommand("ENABLE_NETWORK %d", cs.network_id)) {
-                                cs.status = ConfiguredStation::ENABLED;
-                            }
-                        }
-                    }
-                    break;
-                }
-            }
-            doWifiBooleanCommand("AP_SCAN 1");
-            doWifiBooleanCommand("SAVE_CONFIG");
-        }
-        goto broadcastresult;
-        }
+        return SM_HANDLED;
+    case CMD_REMOVE_NETWORK:
+        setStatus("REMOVE_NETWORK %d", network_id, ConfiguredStation::CURRENT);
+        return SM_HANDLED;
     }
     return SM_DEFAULT;
-broadcastresult:
-    mService->BroadcastConfiguredStations(mStationsConfig);
-    return SM_HANDLED;
 }
 
 void WifiStateMachineActions::Supplicant_Started_exit(void)

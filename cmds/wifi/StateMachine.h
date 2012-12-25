@@ -68,10 +68,8 @@ public:
 
     void transitionTo(int);
     void enqueue(Message *);
-    void enqueue(int command, int arg1=-1, int arg2=-1) {
-        enqueue(new Message(command, arg1, arg2));
-    }
-    void enqueueDelayed(int command, int delay, int arg1=-1, int arg2=-1);
+    void enqueue(int command) { enqueue(new Message(command)); }
+    void enqueueDelayed(int command, int delay);
     State * mStateMap;
     virtual void invoke_enter(ENTER_EXIT_PROTO) = 0;
     virtual stateprocess_t invoke_process(PROCESS_PROTO, Message *) = 0;

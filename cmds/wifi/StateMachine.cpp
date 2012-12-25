@@ -21,10 +21,10 @@ void StateMachine::enqueue(Message *message)
     mCondition.signal();
 }
 
-void StateMachine::enqueueDelayed(int command, int delay, int arg1, int arg2)
+void StateMachine::enqueueDelayed(int command, int delay)
 {
     Mutex::Autolock _l(mLock);
-    Message *message = new Message(command, arg1, arg2);
+    Message *message = new Message(command);
     message->setDelay(delay);
     mDelayedMessages.push(message);
     mCondition.signal();
