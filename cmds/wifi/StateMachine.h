@@ -80,7 +80,6 @@ protected:
 private:
     virtual bool      threadLoop();
     mutable Mutex     mLock;  // Protects mQueuedMessages
-    mutable Condition mCondition;
     int               mCurrentState;
     int               mTargetState;
     int               xsockets[2];

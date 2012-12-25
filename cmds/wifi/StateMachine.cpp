@@ -18,14 +18,12 @@ StateMachine::StateMachine() : mCurrentState(0), mTargetState(0)
         SLOGV("opening stream socket pair\n");
         exit(1);
     }
-//SLOGV("socket pair fd %d:%d\n", xsockets[0], xsockets[1]);
 }
 
 void StateMachine::enqueue(Message *message)
 {
-    Mutex::Autolock _l(mLock);
-    mQueuedMessages.push(message);
-//SLOGV("before write %x message %p\n", xsockets[1], message);
+    //Mutex::Autolock _l(mLock);
+    //mQueuedMessages.push(message);
     if (write(xsockets[1], &message, sizeof(message)) < 0)
         SLOGV("writing stream message");
 }
@@ -33,11 +31,9 @@ void StateMachine::enqueue(Message *message)
 void StateMachine::enqueueDelayed(int command, int delay)
 {
     Mutex::Autolock _l(mLock);
-//SLOGV("enqDelay %d %d\n", command, delay);
     Message *message = new Message(command);
     message->setDelay(delay);
     mDelayedMessages.push(message);
-    mCondition.signal();
 }
 
 // Return true if 'a' is a parent of 'b' or if 'a' == 'b'
@@ -79,8 +75,11 @@ bool StateMachine::threadLoop()
     struct timeval tv;
 
     FD_ZERO(&readfds);
+    FD_SET(xsockets[0], &readfds);
+    int nfd = xsockets[0] + 1;
     initstates();
     while (!exitPending()) {
+        Message *message = NULL;
 	if (mTargetState != mCurrentState) {
 	    int parent = mCurrentState;
             if (isParentOf(mStateMap, mTargetState,parent))
@@ -113,28 +112,19 @@ bool StateMachine::threadLoop()
 	    }
 	}
 	
-        Message *message = NULL;
         while (!message) {
-            FD_SET(xsockets[0], &readfds);
-            int nfd = xsockets[0] + 1;
             tv.tv_sec = 2;
             tv.tv_usec = 100000;
             int rv = select(nfd, &readfds, NULL, NULL, &tv);
-            SLOGV("after Select %d errno %d isset %d\n", rv, errno, FD_ISSET(xsockets[0], &readfds));
+            //SLOGV("after Select %d errno %d isset %d\n", rv, errno, FD_ISSET(xsockets[0], &readfds));
             if (rv == -1)
                 SLOGV("error in select select"); // error occurred in select()
-            else if (rv == 0) {
-                //SLOGV("Timeout occurred!  %d\n", mDelayedMessages.size(), mDeferedMessages.size());
-                if (mDelayedMessages.size()) {
-                    message = mDelayedMessages[0];
-                    mDelayedMessages.removeAt(0);
-                    //break;
-                }
-            } else if (FD_ISSET(xsockets[0], &readfds)) {
+            else if (rv == 0 && mDelayedMessages.size()) {
+                message = mDelayedMessages[0];
+                mDelayedMessages.removeAt(0);
+            } else if (rv > 0 && FD_ISSET(xsockets[0], &readfds)) {
                 if (read(xsockets[0], &message, sizeof(message)) < 0)
                     SLOGV("error reading stream message\n");
-                //SLOGV("after read %x len %d message %p\n", xsockets[0], len, message);
-                //break;
             }
         }
 
