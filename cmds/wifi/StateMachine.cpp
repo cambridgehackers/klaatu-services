@@ -22,8 +22,8 @@ StateMachine::StateMachine() : mCurrentState(0), mTargetState(0)
 
 void StateMachine::enqueue(Message *message)
 {
-    Mutex::Autolock _l(mLock);
-    mQueuedMessages.push(message);
+    //Mutex::Autolock _l(mLock);
+    //mQueuedMessages.push(message);
     if (write(xsockets[1], &message, sizeof(message)) < 0)
         SLOGV("writing stream message");
 }
@@ -75,8 +75,6 @@ bool StateMachine::threadLoop()
     struct timeval tv;
 
     FD_ZERO(&readfds);
-    FD_SET(xsockets[0], &readfds);
-    int nfd = xsockets[0] + 1;
     initstates();
     while (!exitPending()) {
         Message *message = NULL;
@@ -113,6 +111,8 @@ bool StateMachine::threadLoop()
 	}
 	
         while (!message) {
+            int nfd = xsockets[0] + 1;
+            FD_SET(xsockets[0], &readfds);
             tv.tv_sec = 2;
             tv.tv_usec = 100000;
             int rv = select(nfd, &readfds, NULL, NULL, &tv);
