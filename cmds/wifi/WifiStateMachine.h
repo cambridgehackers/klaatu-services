@@ -27,6 +27,10 @@ public:
      state and posts them to the state machine.  It runs in its own thread */
     void           Register(const sp<IWifiClient>& client, int flags);
     int            request_wifi(int request);
+    enum { WIFI_LOAD_DRIVER = 1, WIFI_UNLOAD_DRIVER, WIFI_IS_DRIVER_LOADED,
+        WIFI_START_SUPPLICANT, WIFI_STOP_SUPPLICANT,
+        WIFI_CONNECT_SUPPLICANT, WIFI_CLOSE_SUPPLICANT, WIFI_WAIT_EVENT,
+        DHCP_STOP, DHCP_DO_REQUEST};
 
 protected:
     int            findIndexByNetworkId(int network_id);
@@ -37,7 +41,6 @@ protected:
     bool           doWifiBooleanCommand(const char *fmt, ...);
     void           readNetworkVariables(ConfiguredStation& station);
     void           setStatus(const char *command, int network_id, ConfiguredStation::Status astatus);
-    bool           runDhcp(void);
     virtual const char *msgStr(int msg_id);
 
     String8        mInterface;

@@ -46,11 +46,6 @@ public:
     ConfiguredStation mConfig;
 };
 
-enum { WIFI_LOAD_DRIVER = 1, WIFI_UNLOAD_DRIVER, WIFI_IS_DRIVER_LOADED,
-    WIFI_START_SUPPLICANT, WIFI_STOP_SUPPLICANT,
-    WIFI_CONNECT_SUPPLICANT, WIFI_CLOSE_SUPPLICANT, WIFI_WAIT_EVENT,
-    DHCP_STOP, DHCP_DO_REQUEST};
-
 int WifiStateMachine::request_wifi(int request)
 {
     static const char *reqname[] = {"",
@@ -152,17 +147,16 @@ int WifiStateMachine::request_wifi(int request)
                 while (*buf != '=' && *buf)
                     buf++;
                 if (!*buf) {
-                    SLOGV(".....unable to find id= in %s\n", buf);
+                    SLOGV(".....unable to find id= in %s\n", p);
                     return 0;
                 }
                 p = ++buf;
                 while (isdigit(*p))
                     p++;
-                if (*p != ' ') {  //Normally ends with a space
+                if (*p != ' ')
                     SLOGV(".....unable to find termination of id in %s\n", buf);
-                    return 0;
-                }
-                enqueue(new Message(event, atoi(String8(buf, p-buf).string()), 0, macaddr));
+                else
+                    enqueue(new Message(event, atoi(String8(buf, p-buf).string()), 0, macaddr));
                 break;
                 }
             case SUP_STATE_CHANGE_EVENT: {
@@ -328,7 +322,7 @@ static int monitorThread(void *arg)
     SLOGV("........#### Starting monitor thread ####\n");
     int i = 0;
     char buf[BUF_SIZE];  // Will store a UTF string
-    while (wsm->request_wifi(WIFI_CONNECT_SUPPLICANT)) {
+    while (wsm->request_wifi(WifiStateMachine::WIFI_CONNECT_SUPPLICANT)) {
         if (++i > 5) {
             wsm->enqueue(SUP_DISCONNECTION_EVENT);
             return -1;
@@ -336,7 +330,7 @@ static int monitorThread(void *arg)
         usleep(250 * 1000);  // Sleep for 250 ms
     }
     wsm->enqueue(SUP_CONNECTION_EVENT);
-    while (wsm->request_wifi(WIFI_WAIT_EVENT) <= 0)
+    while (wsm->request_wifi(WifiStateMachine::WIFI_WAIT_EVENT) <= 0)
         ;
     return 0;
 }
@@ -362,7 +356,7 @@ void WifiStateMachineActions::Driver_Unloading_enter(void)
 static void restartSupplicant(WifiStateMachine *wsm)
 {
     SLOGD("Restarting supplicant\n");
-    wsm->request_wifi(WIFI_STOP_SUPPLICANT);
+    wsm->request_wifi(WifiStateMachine::WIFI_STOP_SUPPLICANT);
     wsm->enqueueDelayed(CMD_START_SUPPLICANT, SUPPLICANT_RESTART_INTERVAL_MSECS);
 }
 
@@ -373,6 +367,7 @@ static void restartSupplicant(WifiStateMachine *wsm)
  */
 stateprocess_t WifiStateMachineActions::Supplicant_Starting_process(Message *message)
 {
+    bool something_changed = false;
     if (message->command() == SUP_DISCONNECTION_EVENT) {
         if (++mSupplicantRestartCount <= 5)
             restartSupplicant(this);
@@ -398,7 +393,6 @@ stateprocess_t WifiStateMachineActions::Supplicant_Starting_process(Message *mes
     {
     Mutex::Autolock _l(mReadLock);
     // ### TODO: This can stall.  Not a good idea
-    bool something_changed = false;
     mStationsConfig.clear();
     String8 listStr = doWifiStringCommand("LIST_NETWORKS");
     Vector<String8> lines = splitString(listStr, '\n');
@@ -422,10 +416,10 @@ stateprocess_t WifiStateMachineActions::Supplicant_Starting_process(Message *mes
         }
         mStationsConfig.push(cs);
     }
+    }
     if (something_changed) {
         doWifiBooleanCommand("AP_SCAN 1");
         doWifiBooleanCommand("SAVE_CONFIG");
-    }
     }
     mService->BroadcastConfiguredStations(mStationsConfig);
     mSupplicantRestartCount = 0;
