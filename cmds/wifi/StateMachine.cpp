@@ -22,8 +22,8 @@ StateMachine::StateMachine() : mCurrentState(0), mTargetState(0)
 
 void StateMachine::enqueue(Message *message)
 {
-    //Mutex::Autolock _l(mLock);
-    //mQueuedMessages.push(message);
+    Mutex::Autolock _l(mLock);
+    mQueuedMessages.push(message);
     if (write(xsockets[1], &message, sizeof(message)) < 0)
         SLOGV("writing stream message");
 }
