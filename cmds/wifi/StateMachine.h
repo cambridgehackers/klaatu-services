@@ -28,11 +28,11 @@ public:
     int arg1() const { return mArg1; }
     int arg2() const { return mArg2; }
     //const String8& string() const { return mString; }
+    nsecs_t        mExecuteTime;  // Only for delayed messages
 private:
     int            mCommand;
     int            mArg1, mArg2;
     String8        mString;
-    nsecs_t        mExecuteTime;  // Only for delayed messages
 };
 
 // ---------------------------------------------------------------------------
