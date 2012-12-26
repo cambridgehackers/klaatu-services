@@ -343,52 +343,6 @@ void WifiStateMachine::readNetworkVariables(ConfiguredStation& station)
         station.pre_shared_key = p;
 }
 
-// ------------------------------------------------------------
-stateprocess_t WifiStateMachineActions::default_process(Message *message)
-{
-    switch (message->command()) {
-    case CMD_LOAD_DRIVER:
-    case CMD_UNLOAD_DRIVER:
-    case CMD_START_SUPPLICANT:
-    case CMD_STOP_SUPPLICANT:
-    case CMD_RSSI_POLL:
-    case SUP_CONNECTION_EVENT:
-    case SUP_DISCONNECTION_EVENT:
-    case CMD_START_SCAN:
-    case CMD_ADD_OR_UPDATE_NETWORK:
-    case CMD_REMOVE_NETWORK:
-    case CMD_SELECT_NETWORK:
-    case CMD_ENABLE_NETWORK:
-    case CMD_DISABLE_NETWORK:
-        break;
-    case CMD_ENABLE_RSSI_POLL:
-        mEnableRssiPolling = message->arg1() != 0;
-        break;
-    case CMD_ENABLE_BACKGROUND_SCAN:
-        mEnableBackgroundScan = message->arg1() != 0;
-        break;
-    default:
-        SLOGD("...ERROR - unhandled message %s (%d)\n",
-         sMessageToString[message->command()], message->command());
-        break;
-    }
-    return SM_HANDLED;
-}
-
-/*
-  The Driver states refer to the kernel model.  Executing
-  "wifi_load_driver()" causes the appropriate kernel model for your
-  board to be inserted and executes a firmware loader.  
-  This is tied in tightly to the property system, looking at the
-  "wlan.driver.status" property to see if the driver has been loaded.
- */
-void WifiStateMachineActions::Driver_Loading_enter(void)
-{
-    mService->BroadcastState(WS_ENABLING);
-    if (request_wifi(WIFI_LOAD_DRIVER))
-        mService->BroadcastState(WS_UNKNOWN);
-}
-
 /*
   The WifiStateMachine watches for supplicant messages about wifi
   state and posts them to the state machine.  It runs in its own thread.
@@ -467,6 +421,239 @@ void WifiStateMachine::setInterfaceState(int astate)
              mInterface.string());
 }
 
+static void restartSupplicant(WifiStateMachine *wsm)
+{
+    SLOGD("Restarting supplicant\n");
+    wsm->request_wifi(WifiStateMachine::WIFI_STOP_SUPPLICANT);
+    wsm->enqueueDelayed(CMD_START_SUPPLICANT, SUPPLICANT_RESTART_INTERVAL_MSECS);
+}
+
+int WifiStateMachine::findIndexByNetworkId(int network_id)
+{
+    for (size_t i = 0 ; i < mStationsConfig.size() ; i++)
+        if (mStationsConfig[i].network_id == network_id)
+            return i;
+    SLOGW("WifiStateMachine::findIndexByNetworkId: network %d doesn't exist\n", network_id);
+    return -1;
+}
+
+void WifiStateMachine::setStatus(const char *command, int network_id, ConfiguredStation::Status astatus)
+{
+    Mutex::Autolock _l(mReadLock);
+    if (doWifiBooleanCommand(command, network_id)) {
+        for (size_t i = 0 ; i < mStationsConfig.size() ; i++) {
+            ConfiguredStation& station(mStationsConfig.editItemAt(i));
+            if (station.network_id == network_id) {
+                if (strncmp(command, "REMOVE_NETWORK", strlen("REMOVE_NETWORK")))
+                    station.status = astatus;
+                else {
+                    int status = mStationsConfig.itemAt(i).status;
+                    mStationsConfig.removeAt(i);
+                    if (status == ConfiguredStation::CURRENT) {
+                        /* Enable other networks if we remove the active network */
+                        for (size_t i = 0 ; i < mStationsConfig.size() ; i++) {
+                            ConfiguredStation& cs = mStationsConfig.editItemAt(i);
+                            if (cs.status == ConfiguredStation::DISABLED && 
+                                doWifiBooleanCommand("ENABLE_NETWORK %d", cs.network_id)) {
+                                cs.status = ConfiguredStation::ENABLED;
+                            }
+                        }
+                    }
+                    break;
+                }
+            }
+            else if (!strncmp(command, "SELECT_NETWORK", strlen("SELECT_NETWORK")))
+                station.status = ConfiguredStation::DISABLED;
+        }
+        if (!strncmp(command, "REMOVE_NETWORK", strlen("REMOVE_NETWORK"))) {
+            doWifiBooleanCommand("AP_SCAN 1");
+            doWifiBooleanCommand("SAVE_CONFIG");
+        }
+    }
+    mService->BroadcastConfiguredStations(mStationsConfig);
+}
+
+void WifiStateMachine::disable_interface(void)
+{
+    request_wifi(DHCP_STOP);
+    ncommand("interface clearaddrs %s", mInterface.string());
+    // Update the Wifi Information visible to the user
+    Mutex::Autolock _l(mReadLock);
+    mWifiInformation.ipaddr = "";
+    mWifiInformation.bssid = "";
+    mWifiInformation.ssid = "";
+    mWifiInformation.network_id = -1;
+    mWifiInformation.supplicant_state = WPA_INTERFACE_DISABLED;
+    mWifiInformation.rssi = -9999;
+    mWifiInformation.link_speed = -1;
+    mService->BroadcastInformation(mWifiInformation);
+    for (size_t i = 0 ; i < mStationsConfig.size() ; i++) {
+        ConfiguredStation& cs = mStationsConfig.editItemAt(i);
+        if (cs.status == ConfiguredStation::CURRENT)
+            cs.status = ConfiguredStation::ENABLED;
+    }
+    mService->BroadcastConfiguredStations(mStationsConfig);
+}
+
+void WifiStateMachine::start_scan(bool aactive)
+{
+    if (aactive)
+        doWifiBooleanCommand("DRIVER SCAN-ACTIVE");
+    doWifiBooleanCommand("SCAN");
+    if (aactive)
+        doWifiBooleanCommand("DRIVER SCAN-PASSIVE");
+    mScanResultIsPending = true;
+}
+
+static bool fixDnsEntry(const char *key, const char *value)
+{
+    char old[PROPERTY_VALUE_MAX];
+    property_get(key, old, "");
+    if (strcmp(old, value)) {
+        property_set(key, value);
+        return true;
+    }
+    return false;
+}
+
+static int network_cb(void *arg)
+{
+    WifiStateMachine *wsm = static_cast<WifiStateMachine *>(arg);
+
+    while (!wsm->process_indication())
+        ;
+    return 0;
+}
+// ------------------------------------------------------------
+WifiStateMachine::WifiStateMachine(const char *interface, WifiService *servicep)
+    : mInterface(interface)
+    , mIsScanMode(false)
+    , mEnableRssiPolling(true)
+    , mEnableBackgroundScan(false)
+    , mScanResultIsPending(false)
+    , mService(servicep)
+{
+    mSequenceNumber = 0;
+    indication_start = 0;
+    mFd = socket_local_client("netd", ANDROID_SOCKET_NAMESPACE_RESERVED, SOCK_STREAM);
+    if (mFd < 0) {
+        SLOGW("Could not start connection to socket %s due to error %d\n", "netd", mFd);
+        exit(1);
+    }
+    request_wifi(DHCP_STOP);
+    request_wifi(WIFI_STOP_SUPPLICANT);
+    ADD_ITEMS(mStateMap);
+    //transitionTo(INITIAL_STATE);
+    if (request_wifi(WIFI_IS_DRIVER_LOADED))
+        transitionTo(DRIVER_LOADED_STATE);
+    else
+        transitionTo(DRIVER_UNLOADED_STATE);
+    /* Connect to a CommandListener daemon (e.g. netd)
+      This is a simplified bit of code which expects to only be
+      called by a SINGLE thread (no multiplexing of requests from multiple threads).  */
+    androidCreateThread(network_cb, this);
+    SLOGV("...................WifiStateMachine::startRunning()\n");
+    status_t result = run("WifiStateMachine", PRIORITY_NORMAL);
+    LOG_ALWAYS_FATAL_IF(result, "Could not start WifiStateMachine thread due to error %d\n", result);
+    SLOGV("...................WifiStateMachine::statemachine running()\n");
+}
+
+void WifiStateMachine::Register(const sp<IWifiClient>& client, int flags)
+{
+    Mutex::Autolock _l(mReadLock);
+
+    // We don't preemptively send scandata - it's probably old anyways
+    if (flags & WIFI_CLIENT_FLAG_CONFIGURED_STATIONS)
+        client->ConfiguredStations(mStationsConfig);
+    if (flags & WIFI_CLIENT_FLAG_INFORMATION)
+        client->Information(mWifiInformation);
+    // We don't preemptively send rssi or link speed data
+}
+
+static bool isConnecting(int state)
+{
+    switch (state) {
+    case WPA_ASSOCIATING: case WPA_AUTHENTICATING: case WPA_ASSOCIATED:
+    case WPA_4WAY_HANDSHAKE: case WPA_GROUP_HANDSHAKE: case WPA_COMPLETED:
+        return true;
+    }
+    return false;
+}
+
+void WifiStateMachine::handleSupplicantStateChange(Message *message)
+{
+    Mutex::Autolock _l(mReadLock);
+    mWifiInformation.supplicant_state = message->arg2();
+    mWifiInformation.network_id = -1;
+    if (isConnecting(mWifiInformation.supplicant_state))
+        mWifiInformation.network_id = message->arg1();
+    if (mWifiInformation.supplicant_state == WPA_ASSOCIATING)
+        mWifiInformation.bssid = message->string();
+    mService->BroadcastInformation(mWifiInformation);
+}
+
+const char * WifiStateMachine::msgStr(int msg_id)
+{
+    return sMessageToString[msg_id];
+}
+
+void WifiStateMachine::enqueue_network_update(const ConfiguredStation& cs)
+{
+    enqueue(new AddOrUpdateNetworkMessage(cs));
+}
+
+void WifiStateMachine::flushDnsCache() 
+{
+    ncommand("resolver flushif %s", mInterface.string());
+    ncommand("resolver flushdefaultif");
+}
+
+// ------------------------------------------------------------
+stateprocess_t WifiStateMachineActions::default_process(Message *message)
+{
+    switch (message->command()) {
+    case CMD_LOAD_DRIVER:
+    case CMD_UNLOAD_DRIVER:
+    case CMD_START_SUPPLICANT:
+    case CMD_STOP_SUPPLICANT:
+    case CMD_RSSI_POLL:
+    case SUP_CONNECTION_EVENT:
+    case SUP_DISCONNECTION_EVENT:
+    case CMD_START_SCAN:
+    case CMD_ADD_OR_UPDATE_NETWORK:
+    case CMD_REMOVE_NETWORK:
+    case CMD_SELECT_NETWORK:
+    case CMD_ENABLE_NETWORK:
+    case CMD_DISABLE_NETWORK:
+        break;
+    case CMD_ENABLE_RSSI_POLL:
+        mEnableRssiPolling = message->arg1() != 0;
+        break;
+    case CMD_ENABLE_BACKGROUND_SCAN:
+        mEnableBackgroundScan = message->arg1() != 0;
+        break;
+    default:
+        SLOGD("...ERROR - unhandled message %s (%d)\n",
+         sMessageToString[message->command()], message->command());
+        break;
+    }
+    return SM_HANDLED;
+}
+
+/*
+  The Driver states refer to the kernel model.  Executing
+  "wifi_load_driver()" causes the appropriate kernel model for your
+  board to be inserted and executes a firmware loader.  
+  This is tied in tightly to the property system, looking at the
+  "wlan.driver.status" property to see if the driver has been loaded.
+ */
+void WifiStateMachineActions::Driver_Loading_enter(void)
+{
+    mService->BroadcastState(WS_ENABLING);
+    if (request_wifi(WIFI_LOAD_DRIVER))
+        mService->BroadcastState(WS_UNKNOWN);
+}
+
 stateprocess_t WifiStateMachineActions::Driver_Loaded_process(Message *message)
 {
     if (message->command() == CMD_START_SUPPLICANT) {
@@ -484,13 +671,6 @@ stateprocess_t WifiStateMachineActions::Driver_Loaded_process(Message *message)
 void WifiStateMachineActions::Driver_Unloading_enter(void)
 {
     mService->BroadcastState(request_wifi(WIFI_UNLOAD_DRIVER) ? WS_UNKNOWN : WS_DISABLED);
-}
-
-static void restartSupplicant(WifiStateMachine *wsm)
-{
-    SLOGD("Restarting supplicant\n");
-    wsm->request_wifi(WifiStateMachine::WIFI_STOP_SUPPLICANT);
-    wsm->enqueueDelayed(CMD_START_SUPPLICANT, SUPPLICANT_RESTART_INTERVAL_MSECS);
 }
 
 /*
@@ -557,51 +737,6 @@ stateprocess_t WifiStateMachineActions::Supplicant_Starting_process(Message *mes
     mService->BroadcastConfiguredStations(mStationsConfig);
     mSupplicantRestartCount = 0;
     return SM_DEFAULT;
-}
-
-int WifiStateMachine::findIndexByNetworkId(int network_id)
-{
-    for (size_t i = 0 ; i < mStationsConfig.size() ; i++)
-        if (mStationsConfig[i].network_id == network_id)
-            return i;
-    SLOGW("WifiStateMachine::findIndexByNetworkId: network %d doesn't exist\n", network_id);
-    return -1;
-}
-
-void WifiStateMachine::setStatus(const char *command, int network_id, ConfiguredStation::Status astatus)
-{
-    Mutex::Autolock _l(mReadLock);
-    if (doWifiBooleanCommand(command, network_id)) {
-        for (size_t i = 0 ; i < mStationsConfig.size() ; i++) {
-            ConfiguredStation& station(mStationsConfig.editItemAt(i));
-            if (station.network_id == network_id) {
-                if (strncmp(command, "REMOVE_NETWORK", strlen("REMOVE_NETWORK")))
-                    station.status = astatus;
-                else {
-                    int status = mStationsConfig.itemAt(i).status;
-                    mStationsConfig.removeAt(i);
-                    if (status == ConfiguredStation::CURRENT) {
-                        /* Enable other networks if we remove the active network */
-                        for (size_t i = 0 ; i < mStationsConfig.size() ; i++) {
-                            ConfiguredStation& cs = mStationsConfig.editItemAt(i);
-                            if (cs.status == ConfiguredStation::DISABLED && 
-                                doWifiBooleanCommand("ENABLE_NETWORK %d", cs.network_id)) {
-                                cs.status = ConfiguredStation::ENABLED;
-                            }
-                        }
-                    }
-                    break;
-                }
-            }
-            else if (!strncmp(command, "SELECT_NETWORK", strlen("SELECT_NETWORK")))
-                station.status = ConfiguredStation::DISABLED;
-        }
-        if (!strncmp(command, "REMOVE_NETWORK", strlen("REMOVE_NETWORK"))) {
-            doWifiBooleanCommand("AP_SCAN 1");
-            doWifiBooleanCommand("SAVE_CONFIG");
-        }
-    }
-    mService->BroadcastConfiguredStations(mStationsConfig);
 }
 /* This superclass state encapsulates all of:
      DriverStarting, DriverStopping, DriverStarted, DriverStarted
@@ -753,28 +888,6 @@ stateprocess_t WifiStateMachineActions::Supplicant_Started_process(Message *mess
     return SM_DEFAULT;
 }
 
-void WifiStateMachine::disable_interface(void)
-{
-    request_wifi(DHCP_STOP);
-    ncommand("interface clearaddrs %s", mInterface.string());
-    // Update the Wifi Information visible to the user
-    Mutex::Autolock _l(mReadLock);
-    mWifiInformation.ipaddr = "";
-    mWifiInformation.bssid = "";
-    mWifiInformation.ssid = "";
-    mWifiInformation.network_id = -1;
-    mWifiInformation.supplicant_state = WPA_INTERFACE_DISABLED;
-    mWifiInformation.rssi = -9999;
-    mWifiInformation.link_speed = -1;
-    mService->BroadcastInformation(mWifiInformation);
-    for (size_t i = 0 ; i < mStationsConfig.size() ; i++) {
-        ConfiguredStation& cs = mStationsConfig.editItemAt(i);
-        if (cs.status == ConfiguredStation::CURRENT)
-            cs.status = ConfiguredStation::ENABLED;
-    }
-    mService->BroadcastConfiguredStations(mStationsConfig);
-}
-
 void WifiStateMachineActions::Supplicant_Started_exit(void)
 {
     disable_interface();
@@ -810,16 +923,6 @@ void WifiStateMachineActions::Driver_Started_enter(void)
     }
 }
 
-void WifiStateMachine::start_scan(bool aactive)
-{
-    if (aactive)
-        doWifiBooleanCommand("DRIVER SCAN-ACTIVE");
-    doWifiBooleanCommand("SCAN");
-    if (aactive)
-        doWifiBooleanCommand("DRIVER SCAN-PASSIVE");
-    mScanResultIsPending = true;
-}
-
 stateprocess_t WifiStateMachineActions::Driver_Started_process(Message *message)
 {
     if (message->command() == CMD_START_SCAN) {
@@ -827,11 +930,6 @@ stateprocess_t WifiStateMachineActions::Driver_Started_process(Message *message)
         return SM_HANDLED;
     }
     return SM_NOT_HANDLED;
-}
-
-stateprocess_t WifiStateMachineActions::Scan_Mode_process(Message *message)
-{
-    return Driver_Started_process(message);
 }
 
 stateprocess_t WifiStateMachineActions::Driver_Stopping_process(Message *message)
@@ -912,17 +1010,6 @@ stateprocess_t WifiStateMachineActions::Connect_Mode_process(Message *message)
         return SM_HANDLED;
     }
     return SM_DEFAULT;
-}
-
-static bool fixDnsEntry(const char *key, const char *value)
-{
-    char old[PROPERTY_VALUE_MAX];
-    property_get(key, old, "");
-    if (strcmp(old, value)) {
-        property_set(key, value);
-        return true;
-    }
-    return false;
 }
 
 stateprocess_t WifiStateMachineActions::Connecting_process(Message *message)
@@ -1060,48 +1147,6 @@ stateprocess_t WifiStateMachineActions::sm_default_process(Message *m)
     return SM_DEFAULT;
 }
 
-static int network_cb(void *arg)
-{
-    WifiStateMachine *wsm = static_cast<WifiStateMachine *>(arg);
-
-    while (!wsm->process_indication())
-        ;
-    return 0;
-}
-// ------------------------------------------------------------
-WifiStateMachine::WifiStateMachine(const char *interface, WifiService *servicep)
-    : mInterface(interface)
-    , mIsScanMode(false)
-    , mEnableRssiPolling(true)
-    , mEnableBackgroundScan(false)
-    , mScanResultIsPending(false)
-    , mService(servicep)
-{
-    mSequenceNumber = 0;
-    indication_start = 0;
-    mFd = socket_local_client("netd", ANDROID_SOCKET_NAMESPACE_RESERVED, SOCK_STREAM);
-    if (mFd < 0) {
-        SLOGW("Could not start connection to socket %s due to error %d\n", "netd", mFd);
-        exit(1);
-    }
-    request_wifi(DHCP_STOP);
-    request_wifi(WIFI_STOP_SUPPLICANT);
-    ADD_ITEMS(mStateMap);
-    //transitionTo(INITIAL_STATE);
-    if (request_wifi(WIFI_IS_DRIVER_LOADED))
-        transitionTo(DRIVER_LOADED_STATE);
-    else
-        transitionTo(DRIVER_UNLOADED_STATE);
-    /* Connect to a CommandListener daemon (e.g. netd)
-      This is a simplified bit of code which expects to only be
-      called by a SINGLE thread (no multiplexing of requests from multiple threads).  */
-    androidCreateThread(network_cb, this);
-    SLOGV("...................WifiStateMachine::startRunning()\n");
-    status_t result = run("WifiStateMachine", PRIORITY_NORMAL);
-    LOG_ALWAYS_FATAL_IF(result, "Could not start WifiStateMachine thread due to error %d\n", result);
-    SLOGV("...................WifiStateMachine::statemachine running()\n");
-}
-
 void WifiStateMachine::invoke_enter(ENTER_EXIT_PROTO fn)
 {
     typedef void (WifiStateMachineActions::*WENTER_EXIT_PROTO)(void);
@@ -1127,56 +1172,6 @@ stateprocess_t WifiStateMachine::invoke_process(PROCESS_PROTO fn, Message *messa
         }
     }
     return result;
-}
-
-void WifiStateMachine::Register(const sp<IWifiClient>& client, int flags)
-{
-    Mutex::Autolock _l(mReadLock);
-
-    // We don't preemptively send scandata - it's probably old anyways
-    if (flags & WIFI_CLIENT_FLAG_CONFIGURED_STATIONS)
-        client->ConfiguredStations(mStationsConfig);
-    if (flags & WIFI_CLIENT_FLAG_INFORMATION)
-        client->Information(mWifiInformation);
-    // We don't preemptively send rssi or link speed data
-}
-
-static bool isConnecting(int state)
-{
-    switch (state) {
-    case WPA_ASSOCIATING: case WPA_AUTHENTICATING: case WPA_ASSOCIATED:
-    case WPA_4WAY_HANDSHAKE: case WPA_GROUP_HANDSHAKE: case WPA_COMPLETED:
-        return true;
-    }
-    return false;
-}
-
-void WifiStateMachine::handleSupplicantStateChange(Message *message)
-{
-    Mutex::Autolock _l(mReadLock);
-    mWifiInformation.supplicant_state = message->arg2();
-    mWifiInformation.network_id = -1;
-    if (isConnecting(mWifiInformation.supplicant_state))
-        mWifiInformation.network_id = message->arg1();
-    if (mWifiInformation.supplicant_state == WPA_ASSOCIATING)
-        mWifiInformation.bssid = message->string();
-    mService->BroadcastInformation(mWifiInformation);
-}
-
-const char * WifiStateMachine::msgStr(int msg_id)
-{
-    return sMessageToString[msg_id];
-}
-
-void WifiStateMachine::enqueue_network_update(const ConfiguredStation& cs)
-{
-    enqueue(new AddOrUpdateNetworkMessage(cs));
-}
-
-void WifiStateMachine::flushDnsCache() 
-{
-    ncommand("resolver flushif %s", mInterface.string());
-    ncommand("resolver flushdefaultif");
 }
 
 };  // namespace android

@@ -157,7 +157,6 @@ void Driver_Started_enter(void);
 stateprocess_t Driver_Started_process(Message *);
 stateprocess_t Driver_Stopping_process(Message *);
 void Driver_Unloading_enter(void);
-stateprocess_t Scan_Mode_process(Message *);
 stateprocess_t Supplicant_Started_process(Message *);
 void Supplicant_Started_exit(void);
 stateprocess_t Supplicant_Starting_process(Message *);
@@ -165,7 +164,7 @@ stateprocess_t Supplicant_Stopping_process(Message *);
 stateprocess_t default_process(Message *);
 };
 void ADD_ITEMS(State *mStateMap) {
-    addstateitem(CONNECT_MODE_STATE, 0,static_cast<PROCESS_PROTO>(&WifiStateMachineActions::Connect_Mode_process), 0, SUPPLICANT_STARTED_STATE);
+    addstateitem(CONNECT_MODE_STATE, 0,static_cast<PROCESS_PROTO>(&WifiStateMachineActions::Connect_Mode_process), 0, DRIVER_STARTED_STATE);
     addstateitem(CONNECTED_STATE, static_cast<ENTER_EXIT_PROTO>(&WifiStateMachineActions::Connected_enter),static_cast<PROCESS_PROTO>(&WifiStateMachineActions::Connected_process),static_cast<ENTER_EXIT_PROTO>(&WifiStateMachineActions::Connected_exit), CONNECT_MODE_STATE);
     addstateitem(CONNECTING_STATE, 0,static_cast<PROCESS_PROTO>(&WifiStateMachineActions::Connecting_process), 0, CONNECT_MODE_STATE);
     addstateitem(DISCONNECTED_STATE, static_cast<ENTER_EXIT_PROTO>(&WifiStateMachineActions::Disconnected_enter),static_cast<PROCESS_PROTO>(&WifiStateMachineActions::Disconnected_process),static_cast<ENTER_EXIT_PROTO>(&WifiStateMachineActions::Disconnected_exit), CONNECT_MODE_STATE);
@@ -178,7 +177,7 @@ void ADD_ITEMS(State *mStateMap) {
     addstateitem(DRIVER_STOPPING_STATE, 0,static_cast<PROCESS_PROTO>(&WifiStateMachineActions::Driver_Stopping_process), 0, SUPPLICANT_STARTED_STATE);
     addstateitem(DRIVER_UNLOADED_STATE, 0,static_cast<PROCESS_PROTO>(&WifiStateMachineActions::sm_default_process), 0, DEFAULT_STATE);
     addstateitem(DRIVER_UNLOADING_STATE, static_cast<ENTER_EXIT_PROTO>(&WifiStateMachineActions::Driver_Unloading_enter),static_cast<PROCESS_PROTO>(&WifiStateMachineActions::sm_default_process), 0, DEFAULT_STATE);
-    addstateitem(SCAN_MODE_STATE, 0,static_cast<PROCESS_PROTO>(&WifiStateMachineActions::Scan_Mode_process), 0, SUPPLICANT_STARTED_STATE);
+    addstateitem(SCAN_MODE_STATE, 0, 0, 0, DRIVER_STARTED_STATE);
     addstateitem(SUPPLICANT_STARTED_STATE, 0,static_cast<PROCESS_PROTO>(&WifiStateMachineActions::Supplicant_Started_process),static_cast<ENTER_EXIT_PROTO>(&WifiStateMachineActions::Supplicant_Started_exit), DEFAULT_STATE);
     addstateitem(SUPPLICANT_STARTING_STATE, 0,static_cast<PROCESS_PROTO>(&WifiStateMachineActions::Supplicant_Starting_process), 0, DEFAULT_STATE);
     addstateitem(SUPPLICANT_STOPPING_STATE, 0,static_cast<PROCESS_PROTO>(&WifiStateMachineActions::Supplicant_Stopping_process), 0, DEFAULT_STATE);
