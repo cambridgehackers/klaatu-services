@@ -615,7 +615,7 @@ stateprocess_t WifiStateMachineActions::Supplicant_Started_process(Message *mess
         restartSupplicant(this);
         request_wifi(WIFI_CLOSE_SUPPLICANT);
         // mNetworkInfo.setIsAvailable(false);
-        Supplicant_Started_exit();
+        disable_interface();
         // sendSupplicantConnectionChangedBroadcast(false);
         // mSupplicantStateTracker.sendMessage(CMD_RESET_SUPPLICANT_STATE);
         // mWpsStateMachine.sendMessage(CMD_RESET_WPS_STATE);
@@ -753,7 +753,7 @@ stateprocess_t WifiStateMachineActions::Supplicant_Started_process(Message *mess
     return SM_DEFAULT;
 }
 
-void WifiStateMachineActions::Supplicant_Started_exit(void)
+void WifiStateMachine::disable_interface(void)
 {
     request_wifi(DHCP_STOP);
     ncommand("interface clearaddrs %s", mInterface.string());
@@ -775,12 +775,18 @@ void WifiStateMachineActions::Supplicant_Started_exit(void)
     mService->BroadcastConfiguredStations(mStationsConfig);
 }
 
-void WifiStateMachineActions::Supplicant_Stopping_enter(void)
+void WifiStateMachineActions::Supplicant_Started_exit(void)
+{
+    disable_interface();
+}
+
+stateprocess_t WifiStateMachineActions::Supplicant_Stopping_process(Message *message)
 {
     mService->BroadcastState(WS_DISABLING);
     if (!doWifiBooleanCommand("TERMINATE"))
         request_wifi(WIFI_STOP_SUPPLICANT);
     transitionTo(DRIVER_LOADED_STATE);
+    return SM_HANDLED;
 }
 
 /*
@@ -888,7 +894,7 @@ stateprocess_t WifiStateMachineActions::Connect_Mode_process(Message *message)
         }
         break;
     case NETWORK_DISCONNECTION_EVENT:
-        Supplicant_Started_exit();
+        disable_interface();
         break;
     }
     return SM_DEFAULT;
@@ -920,12 +926,11 @@ stateprocess_t WifiStateMachineActions::Connecting_process(Message *message)
             // ### TODO: Check to make sure they aren't local addresses
             const char *dns1 = dmessage->dns1.string();
             const char *dns2 = dmessage->dns2.string();
-            String8 cmd = String8::format("resolver setifdns %s", mInterface.string());
-            if (strlen(dns1) && !strcmp(dns1,"127.0.0.1"))
-                cmd.appendFormat(" %s", dns1);
-            if (strlen(dns2) && !strcmp(dns2,"127.0.0.1"))
-                cmd.appendFormat(" %s", dns2);
-            ncommand(cmd.string());
+            if (!strcmp(dns1, "127.0.0.1"))
+                dns1 = "";
+            if (!strcmp(dns2, "127.0.0.1"))
+                dns2 = "";
+            ncommand("resolver setifdns %s %s %s", mInterface.string(), dns1, dns2);
             ncommand("resolver setifdns %s", mInterface.string());
         }
         Mutex::Autolock _l(mReadLock);
@@ -992,7 +997,7 @@ void WifiStateMachineActions::Connected_exit(void)
 stateprocess_t WifiStateMachineActions::Disconnecting_process(Message *message)
 {
     if (message->command() == SUP_STATE_CHANGE_EVENT)
-        Supplicant_Started_exit();
+        disable_interface();
     return SM_DEFAULT;
 }
 

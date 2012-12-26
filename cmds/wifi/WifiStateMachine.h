@@ -60,6 +60,7 @@ protected:
     void                       setInterfaceState(int astate);
     void                       flushDnsCache();
     String8                    ncommand(const char *fmt, ...);
+    void                       disable_interface(void);
 private:
     mutable Mutex              mLock;     // Protects the response queue
     mutable Condition          mCondition;
