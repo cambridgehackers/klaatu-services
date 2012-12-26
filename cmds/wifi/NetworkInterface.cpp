@@ -150,7 +150,11 @@ Vector<String8> NetworkInterface::ncommand(const String8& command, int *error_co
     }
     while (code < 200 || code >= 600) {
 	while (mResponseQueue.size() == 0)
+{
+    SLOGV("MMMMDDDDDDDDDDDDDDDDDDDDD %d\n", mResponseQueue.size());
 	    mCondition.wait(mLock);
+    SLOGV("MMMMMMMMMMMMMMMMMMMMMMMMMMM %d\n", mResponseQueue.size());
+}
 	SLOGV("....NetworkInterface::response string '%s'", mResponseQueue[0].string());
 	const String8& data(mResponseQueue[0]);
 	code = extractCode(data.string());
