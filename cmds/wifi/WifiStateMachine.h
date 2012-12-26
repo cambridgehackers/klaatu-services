@@ -41,6 +41,7 @@ protected:
     bool           doWifiBooleanCommand(const char *fmt, ...);
     void           readNetworkVariables(ConfiguredStation& station);
     void           setStatus(const char *command, int network_id, ConfiguredStation::Status astatus);
+    void           start_scan(bool aactive);
     virtual const char *msgStr(int msg_id);
 
     String8        mInterface;

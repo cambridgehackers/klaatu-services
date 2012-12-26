@@ -810,17 +810,28 @@ void WifiStateMachineActions::Driver_Started_enter(void)
     }
 }
 
-stateprocess_t WifiStateMachineActions::Driver_Started_process(Message *message)
+void WifiStateMachine::start_scan(bool aactive)
 {
-    if (message->command() != CMD_START_SCAN)
-        return SM_NOT_HANDLED;
-    if (message->arg1())
+    if (aactive)
         doWifiBooleanCommand("DRIVER SCAN-ACTIVE");
     doWifiBooleanCommand("SCAN");
-    if (message->arg1())
+    if (aactive)
         doWifiBooleanCommand("DRIVER SCAN-PASSIVE");
     mScanResultIsPending = true;
-    return SM_HANDLED;
+}
+
+stateprocess_t WifiStateMachineActions::Driver_Started_process(Message *message)
+{
+    if (message->command() == CMD_START_SCAN) {
+        start_scan(message->arg1() != 0);
+        return SM_HANDLED;
+    }
+    return SM_NOT_HANDLED;
+}
+
+stateprocess_t WifiStateMachineActions::Scan_Mode_process(Message *message)
+{
+    return Driver_Started_process(message);
 }
 
 stateprocess_t WifiStateMachineActions::Driver_Stopping_process(Message *message)
@@ -896,6 +907,9 @@ stateprocess_t WifiStateMachineActions::Connect_Mode_process(Message *message)
     case NETWORK_DISCONNECTION_EVENT:
         disable_interface();
         break;
+    case CMD_START_SCAN:
+        start_scan(message->arg1() != 0);
+        return SM_HANDLED;
     }
     return SM_DEFAULT;
 }
