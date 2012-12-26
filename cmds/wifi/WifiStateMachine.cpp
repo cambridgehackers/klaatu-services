@@ -8,6 +8,7 @@
 
 #include <stdio.h>
 #include <ctype.h>
+#include <fcntl.h>
 #include <cutils/properties.h>
 #include <hardware_legacy/wifi.h>
 #include <netutils/dhcp.h>
@@ -936,6 +937,7 @@ WifiStateMachine::WifiStateMachine(const char *interface, WifiService *servicep)
     SLOGV("...................WifiStateMachine::startRunning()\n");
 #else
     extraFd = mNetworkInterface->getFd();
+    fcntl(extraFd, F_SETFL, fcntl(extraFd, F_GETFL, 0) | O_NONBLOCK);
     extraCb = network_cb;
 #endif
     status_t result = run("WifiStateMachine", PRIORITY_NORMAL);
