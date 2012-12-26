@@ -117,7 +117,8 @@ bool StateMachine::threadLoop()
             //SLOGV("after Select %d errno %d isset %d\n", rv, errno, FD_ISSET(xsockets[0], &readfds));
             if (rv == -1)
                 SLOGV("error in select select"); // error occurred in select()
-            else if (rv == 0 && mDelayedMessages.size()) {
+            else if (rv == 0 && mDelayedMessages.size()
+             &&  mDelayedMessages[0]->mExecuteTime < systemTime()) {
                 message = mDelayedMessages[0];
                 mDelayedMessages.removeAt(0);
             } else if (rv > 0 && FD_ISSET(xsockets[0], &readfds)) {

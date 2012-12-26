@@ -32,6 +32,8 @@ public:
     void flushDnsCache();
     void clearInterfaceAddresses();
     Vector<String8> ncommand(const String8&, int *error_code = 0);
+    int getFd(void) { return mFd; }
+    bool process_indication(void);
 
 protected:
     virtual bool threadLoop();
@@ -44,6 +46,8 @@ private:
     int               mFd;
     Vector<String8>   mResponseQueue;
     int               mSequenceNumber;
+    char indication_buf[1024];
+    int indicationstart;
 };
 
 };  // namespace android

@@ -15,6 +15,7 @@ NetworkInterface::NetworkInterface(WifiStateMachine *state_machine,
 				   const String8& interface)
     : mStateMachine(state_machine) , mInterface(interface) , mSequenceNumber(0)
 {
+    indicationstart = 0;
     mFd = socket_local_client("netd", ANDROID_SOCKET_NAMESPACE_RESERVED, SOCK_STREAM);
     if (mFd < 0) {
 	SLOGW("Could not start connection to socket %s due to error %d\n", "netd", mFd);
@@ -175,44 +176,45 @@ Vector<String8> NetworkInterface::ncommand(const String8& command, int *error_co
     return response;
 }
 
+bool NetworkInterface::process_indication()
+{
+    int count = ::read(mFd, indication_buf + indicationstart, sizeof(indication_buf) - indicationstart);
+    if (count < 0) {
+        perror("Error reading daemon socket");
+        return true;
+    }
+    count += indicationstart;
+    indicationstart = 0;
+    for (int i = 0 ; i < count ; i++) {
+        if (indication_buf[i] == '\0') {
+        String8 message = String8(indication_buf + indicationstart, i - indicationstart);
+        SLOGV("......extracted message: %s\n", message.string());
+        indicationstart = i + 1;
+        int space_index = message.find(" ");
+        if (space_index > 0) {
+            int code = extractCode(message.string());
+            if (code >= 600) 
+                        SLOGV("....network message=%s\n", message.string());
+            else {
+            Mutex::Autolock _l(mLock);
+            mResponseQueue.push(message);
+            mCondition.signal();
+            }
+        } else {
+            SLOGW("NetworkInterface: Illegal message '%s'\n", message.string());
+        }
+        }
+    }
+    if (indicationstart < count) 
+        memcpy(indication_buf, indication_buf+indicationstart, count - indicationstart);
+    indicationstart = count - indicationstart;
+    return false;
+}
+
 bool NetworkInterface::threadLoop()
 {
-    char buf[1024];
-    int start = 0;
-    int sequence_number = 0;
-
-    while (1) {
-	int count = ::read(mFd, buf + start, sizeof(buf) - start);
-	if (count < 0) {
-	    perror("Error reading daemon socket");
-	    break;
-	}
-	count += start;
-	start = 0;
-	for (int i = 0 ; i < count ; i++) {
-	    if (buf[i] == '\0') {
-		String8 message = String8(buf + start, i - start);
-		SLOGV("......extracted message: %s\n", message.string());
-		start = i + 1;
-		int space_index = message.find(" ");
-		if (space_index > 0) {
-		    int code = extractCode(message.string());
-		    if (code >= 600) 
-                        SLOGV("....network message=%s\n", message.string());
-		    else {
-			Mutex::Autolock _l(mLock);
-			mResponseQueue.push(message);
-			mCondition.signal();
-		    }
-		} else {
-		    SLOGW("NetworkInterface: Illegal message '%s'\n", message.string());
-		}
-	    }
-	}
-	if (start < count) 
-	    memcpy(buf, buf+start, count - start);
-	start = count - start;
-    }
+    while (!process_indication())
+        ;
     return true;
 }
 
