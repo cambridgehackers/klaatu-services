@@ -904,7 +904,9 @@ stateprocess_t WifiStateMachineActions::sm_default_process(Message *m)
 static NetworkInterface *thisnetwork;
 static void network_cb(void)
 {
+SLOGV("BBBBBBBBBBBBBBBBBBBBBBBBefore\n");
     thisnetwork->process_indication();
+SLOGV("AAAAAAAAAAAAAAAAAAAAAAAAAfter\n");
 }
 // ------------------------------------------------------------
 WifiStateMachine::WifiStateMachine(const char *interface, WifiService *servicep)

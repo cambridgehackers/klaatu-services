@@ -120,7 +120,7 @@ bool StateMachine::threadLoop()
             tv.tv_sec = 2;
             tv.tv_usec = 100000;
             int rv = select(nfd, &readfds, NULL, NULL, &tv);
-            //SLOGV("after Select %d errno %d isset %d\n", rv, errno, FD_ISSET(xsockets[0], &readfds));
+            SLOGV("after Select %d errno %d isset %d\n", rv, errno, FD_ISSET(xsockets[0], &readfds));
             if (rv == -1)
                 SLOGV("error in select select"); // error occurred in select()
             else if (rv == 0 && mDelayedMessages.size()
@@ -131,7 +131,9 @@ bool StateMachine::threadLoop()
                 if (read(xsockets[0], &message, sizeof(message)) < 0)
                     SLOGV("error reading stream message\n");
             } else if (rv > 0 && extraFd != -1 && FD_ISSET(extraFd, &readfds)) {
+SLOGV("JJJJJJJJJJJJJJJJJJJJ\n");
                 extraCb();
+SLOGV("KKKKKKKKKKKKKKKKKKKKKKKK\n");
             }
         }
 
