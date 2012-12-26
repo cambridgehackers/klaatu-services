@@ -57,17 +57,17 @@ protected:
     WifiInformation            mWifiInformation;   // Information about the current network
     // TODO:  Probably need a Mutex lock
     Vector<ConfiguredStation>  mStationsConfig;
-    bool setInterfaceState(int astate);
-    void flushDnsCache();
-    Vector<String8> ncommand(const String8&, int *error_code = 0);
+    void                       setInterfaceState(int astate);
+    void                       flushDnsCache();
+    String8                    ncommand(const String8&);
 private:
-    mutable Mutex     mLock;     // Protects the response queue
-    mutable Condition mCondition;
-    int               mFd;
-    Vector<String8>   mResponseQueue;
-    int               mSequenceNumber;
-    char              indication_buf[1024];
-    int               indicationstart;
+    mutable Mutex              mLock;     // Protects the response queue
+    mutable Condition          mCondition;
+    int                        mFd;
+    Vector<String8>            mResponseQueue;
+    int                        mSequenceNumber;
+    char                       indication_buf[1024];
+    int                        indication_start;
 };
 
 };  // namespace android
