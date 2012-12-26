@@ -51,8 +51,10 @@ static void callEnterChain(StateMachine *state_machine, int parent, int state)
 {
     if (state && state != parent) {
 	callEnterChain(state_machine, parent, state_machine->mStateMap[state].mParent);
-	SLOGV(".............Calling enter on %s\n", state_table[state].name);
-        state_machine->invoke_enter(state_machine->mStateMap[state].mEnter);
+        if (state_machine->mStateMap[state].mEnter) {
+	    SLOGV(".............Calling enter on %s\n", state_table[state].name);
+            state_machine->invoke_enter(state_machine->mStateMap[state].mEnter);
+        }
     }
 }
 
@@ -88,8 +90,10 @@ bool StateMachine::threadLoop()
 		SLOGV("......Exiting state %s\n", state_table[mCurrentState].name);
 		int state = mCurrentState;
 		while (state && state != parent) {
-		    SLOGV(".............Calling exit on %s\n", state_table[state].name);
-                    invoke_enter(mStateMap[state].mExit);
+                    if (mStateMap[state].mExit) {
+		        SLOGV(".............Calling exit on %s\n", state_table[state].name);
+                        invoke_enter(mStateMap[state].mExit);
+                    }
 	    	    state = mStateMap[state].mParent;
 		}
 	    }
@@ -139,23 +143,9 @@ bool StateMachine::threadLoop()
 	while (state && result == SM_NOT_HANDLED) {
 	    SLOGV("......Processing message %s (%d) in state %s\n", msg_str,
 		   message->command(), state_table[state].name);
-	    STATE_TRANSITION *t = state_table[state].tran;
-            result = invoke_process(mStateMap[state].mProcess, message);
+            if (mStateMap[state].mProcess)
+                result = invoke_process(mStateMap[state].mProcess, message, state_table[state].tran);
 	    state = mStateMap[state].mParent;
-	    if (result == SM_DEFAULT) {
-		result = SM_NOT_HANDLED;
-		while (t && t->state) {
-		    if (t->event == message->command()) {
-			result = SM_DEFER;
-		        if (t->state != DEFER_STATE) {
-		            transitionTo(t->state);
-		            result = SM_HANDLED;
-			}
-			break;
-		    }
-		    t++;
-		}
-	    }
 	}
 	switch (result) {
 	case SM_DEFER:

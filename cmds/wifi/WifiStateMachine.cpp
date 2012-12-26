@@ -1081,14 +1081,8 @@ WifiStateMachine::WifiStateMachine(const char *interface, WifiService *servicep)
     /* Connect to a CommandListener daemon (e.g. netd)
       This is a simplified bit of code which expects to only be
       called by a SINGLE thread (no multiplexing of requests from multiple threads).  */
-#if 1
     androidCreateThread(network_cb, this);
     SLOGV("...................WifiStateMachine::startRunning()\n");
-#else
-    extraFd = mFd;
-    fcntl(extraFd, F_SETFL, fcntl(extraFd, F_GETFL, 0) | O_NONBLOCK);
-    extraCb = network_cb;
-#endif
     status_t result = run("WifiStateMachine", PRIORITY_NORMAL);
     LOG_ALWAYS_FATAL_IF(result, "Could not start WifiStateMachine thread due to error %d\n", result);
     SLOGV("...................WifiStateMachine::statemachine running()\n");
@@ -1097,15 +1091,28 @@ WifiStateMachine::WifiStateMachine(const char *interface, WifiService *servicep)
 void WifiStateMachine::invoke_enter(ENTER_EXIT_PROTO fn)
 {
     typedef void (WifiStateMachineActions::*WENTER_EXIT_PROTO)(void);
-    if (fn)
-        (static_cast<WifiStateMachineActions *>(this)->*static_cast<WENTER_EXIT_PROTO>(fn))();
+    (static_cast<WifiStateMachineActions *>(this)->*static_cast<WENTER_EXIT_PROTO>(fn))();
 }
-stateprocess_t WifiStateMachine::invoke_process(PROCESS_PROTO fn, Message *m)
+
+stateprocess_t WifiStateMachine::invoke_process(PROCESS_PROTO fn, Message *message, STATE_TRANSITION *t)
 {
     typedef stateprocess_t (WifiStateMachineActions::*WPROCESS_PROTO)(Message *);
-    if (!fn)
-        return SM_NOT_HANDLED;
-    return (static_cast<WifiStateMachineActions *>(this)->*static_cast<WPROCESS_PROTO>(fn))(m);
+    stateprocess_t result = (static_cast<WifiStateMachineActions *>(this)->*static_cast<WPROCESS_PROTO>(fn))(message);
+    if (result == SM_DEFAULT) {
+        result = SM_NOT_HANDLED;
+        while (t && t->state) {
+            if (t->event == message->command()) {
+                result = SM_DEFER;
+                if (t->state != DEFER_STATE) {
+                    transitionTo(t->state);
+                    result = SM_HANDLED;
+                }
+                break;
+            }
+            t++;
+        }
+    }
+    return result;
 }
 
 void WifiStateMachine::Register(const sp<IWifiClient>& client, int flags)
