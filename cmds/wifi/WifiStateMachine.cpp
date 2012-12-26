@@ -52,7 +52,7 @@ static int extractSequence(const char *buf)
     int result = 0;
     const char *p = buf;
     while (*p && isdigit(*p))
-	result = result * 10 + (*p++ - '0');
+        result = result * 10 + (*p++ - '0');
     return (p > buf) ? result : -1 ;
 }
 
@@ -61,7 +61,7 @@ static int extractSequence(const char *buf)
 static int extractCode(const char *buf)
 {
     if (isdigit(buf[0]) && isdigit(buf[1]) && isdigit(buf[2]) && buf[3] == ' ')
-	return extractSequence(buf);
+        return extractSequence(buf);
     return -1;
 }
 
@@ -76,21 +76,21 @@ String8 WifiStateMachine::ncommand(const String8& command)
     seqno = ++mSequenceNumber;
 
     String8 message = String8::format("%d %s", seqno, command.string());
-    SLOGV(".....ncommand:          '%s'\n", message.string());
+    SLOGV(".....Netd command:          '%s'\n", message.string());
     int len = ::write(mFd, message.string(), message.length() + 1);
     if (len < 0) {
-	perror("Unable to write to daemon socket");
-	exit(1);
+        perror("Unable to write to daemon socket");
+        exit(1);
     }
     while (code < 200 || code >= 600) {
-	while (mResponseQueue.size() == 0)
-	    mCondition.wait(mLock);
-	response = mResponseQueue[0];
-	mResponseQueue.removeAt(0);
+        while (mResponseQueue.size() == 0)
+            mCondition.wait(mLock);
+        response = mResponseQueue[0];
+        mResponseQueue.removeAt(0);
         code = extractCode(response.string());
-	SLOGV(".....ncommand: response '%s'", response.string());
+        SLOGV(".....Netd command: response '%s'", response.string());
     }
-    //SLOGV(".....ncommand: '%s' error_code %d\n", message.string(), code);
+    //SLOGV(".....Netd command: '%s' error_code %d\n", message.string(), code);
     return response;
 }
 
@@ -279,9 +279,9 @@ String8 WifiStateMachine::doWifiStringCommand(const char *fmt, va_list args)
     SLOGV(".....Command: %s\n", buf);
     if (byteCount < 0 || byteCount >= BUF_SIZE
      || ::wifi_command(mInterface.string(), buf, reply, &reply_len))
-	reply_len = 0;
+        reply_len = 0;
     if (reply_len > 0 && reply[reply_len-1] == '\n')
-	reply_len--;
+        reply_len--;
     reply[reply_len] = 0;
     //SLOGV(".....Reply: %s\n", reply);
     return String8(reply);
@@ -435,29 +435,29 @@ void WifiStateMachine::setInterfaceState(int astate)
         }
     }
     if (code != 213 || response.size() == 0) {
-	SLOGW("...can't get interface config code=%d\n", code);
-	return;
+        SLOGW("...can't get interface config code=%d\n", code);
+        return;
     }
     // Rsp xx:xx:xx:xx:xx:xx yyy.yyy.yyy.yyy zzz [flag1 flag2 flag3]
     SLOGV("......parsing: %s\n", response[0].string());
     Vector<String8> elements = splitString(response[0], ' ', 5);
     if (elements.size() != 5) {
-	SLOGW("....bad split of interface cmd '%s'\n", response[0].string());
-	return;
+        SLOGW("....bad split of interface cmd '%s'\n", response[0].string());
+        return;
     }
     ifcfg.hwaddr = elements[1];
     ifcfg.ipaddr = elements[2];
     ifcfg.prefixLength = atoi(elements[3].string());
     ifcfg.flags = elements[4];
     SLOGV("....ifcfg hwaddr='%s' ipaddr='%s' prefixlen=%d flags='%s'\n",
-	 ifcfg.hwaddr.string(), ifcfg.ipaddr.string(), ifcfg.prefixLength, ifcfg.flags.string());
+         ifcfg.hwaddr.string(), ifcfg.ipaddr.string(), ifcfg.prefixLength, ifcfg.flags.string());
     ifcfg.flags = replaceString(ifcfg.flags, sname[1 - astate], sname[astate]);
     data = ncommand(String8::format("interface setcfg %s %s %d %s", mInterface.string(),
-	ifcfg.ipaddr.string(), ifcfg.prefixLength, ifcfg.flags.string()));
+        ifcfg.ipaddr.string(), ifcfg.prefixLength, ifcfg.flags.string()));
     code = extractCode(data.string());
     if (!(code >= 200))
-	SLOGW("WifiStateMachine::setInterfaceState(): Unable to set interface %s\n", 
-	     mInterface.string());
+        SLOGW("WifiStateMachine::setInterfaceState(): Unable to set interface %s\n", 
+             mInterface.string());
 }
 
 stateprocess_t WifiStateMachineActions::Driver_Loaded_process(Message *message)
@@ -915,9 +915,9 @@ stateprocess_t WifiStateMachineActions::Connecting_process(Message *message)
             const char *dns2 = dmessage->dns2.string();
             String8 cmd = String8::format("resolver setifdns %s", mInterface.string());
             if (strlen(dns1) && !strcmp(dns1,"127.0.0.1"))
-	        cmd.appendFormat(" %s", dns1);
+                cmd.appendFormat(" %s", dns1);
             if (strlen(dns2) && !strcmp(dns2,"127.0.0.1"))
-	        cmd.appendFormat(" %s", dns2);
+                cmd.appendFormat(" %s", dns2);
             ncommand(cmd);
             ncommand(String8::format("resolver setifdns %s", mInterface.string()));
         }
@@ -1102,9 +1102,9 @@ void WifiStateMachine::Register(const sp<IWifiClient>& client, int flags)
 
     // We don't preemptively send scandata - it's probably old anyways
     if (flags & WIFI_CLIENT_FLAG_CONFIGURED_STATIONS)
-	client->ConfiguredStations(mStationsConfig);
+        client->ConfiguredStations(mStationsConfig);
     if (flags & WIFI_CLIENT_FLAG_INFORMATION)
-	client->Information(mWifiInformation);
+        client->Information(mWifiInformation);
     // We don't preemptively send rssi or link speed data
 }
 
