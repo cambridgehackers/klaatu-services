@@ -66,18 +66,26 @@ static int extractCode(const char *buf)
 }
 
 static int seqno;
-String8 WifiStateMachine::ncommand(const String8& command)
+String8 WifiStateMachine::ncommand(const char *fmt, ...)
 {
     String8 response;
     int code = -1;
+    char buf[BUF_SIZE];
+    char *p = buf;
+    va_list args;
 
     Mutex::Autolock _l(mLock);
     mResponseQueue.clear();
     seqno = ++mSequenceNumber;
+    va_start(args, fmt);
+    snprintf(p, sizeof(buf), "%d ", seqno);
+    p += strlen(p);
+    vsnprintf(p, sizeof(buf) - (p - buf), fmt, args);
+    va_end(args);
 
-    String8 message = String8::format("%d %s", seqno, command.string());
-    SLOGV(".....Netd command:          '%s'\n", message.string());
-    int len = ::write(mFd, message.string(), message.length() + 1);
+    //String8 message = String8::format("%d %s", seqno, buf);
+    SLOGV(".....Netd:          '%s'\n", buf);
+    int len = ::write(mFd, buf, strlen(buf) + 1);
     if (len < 0) {
         perror("Unable to write to daemon socket");
         exit(1);
@@ -88,9 +96,8 @@ String8 WifiStateMachine::ncommand(const String8& command)
         response = mResponseQueue[0];
         mResponseQueue.removeAt(0);
         code = extractCode(response.string());
-        SLOGV(".....Netd command: response '%s'", response.string());
+        SLOGV(".....Netd: resp '%s'", response.string());
     }
-    //SLOGV(".....Netd command: '%s' error_code %d\n", message.string(), code);
     return response;
 }
 
@@ -104,7 +111,7 @@ bool WifiStateMachine::process_indication()
     count += indication_start;
     indication_start = 0;
     for (int i = 0 ; i < count ; i++) {
-        if (indication_buf[i] == '\0') {
+        if (!indication_buf[i]) {
             Mutex::Autolock _l(mLock);
             mResponseQueue.push(String8(indication_buf + indication_start, i - indication_start));
             mCondition.signal();
@@ -417,7 +424,7 @@ void WifiStateMachine::setInterfaceState(int astate)
     } ifcfg;
     int code = 0;
 
-    String8 data = ncommand(String8::format("interface getcfg %s", mInterface.string()));
+    String8 data = ncommand("interface getcfg %s", mInterface.string());
     Vector<String8> response;
     code = extractCode(data.string());
     if (code < 0) 
@@ -439,7 +446,7 @@ void WifiStateMachine::setInterfaceState(int astate)
         return;
     }
     // Rsp xx:xx:xx:xx:xx:xx yyy.yyy.yyy.yyy zzz [flag1 flag2 flag3]
-    SLOGV("......parsing: %s\n", response[0].string());
+    SLOGV(".......parsing: %s\n", response[0].string());
     Vector<String8> elements = splitString(response[0], ' ', 5);
     if (elements.size() != 5) {
         SLOGW("....bad split of interface cmd '%s'\n", response[0].string());
@@ -449,11 +456,11 @@ void WifiStateMachine::setInterfaceState(int astate)
     ifcfg.ipaddr = elements[2];
     ifcfg.prefixLength = atoi(elements[3].string());
     ifcfg.flags = elements[4];
-    SLOGV("....ifcfg hwaddr='%s' ipaddr='%s' prefixlen=%d flags='%s'\n",
+    SLOGV(".......ifcfg hwaddr='%s' ipaddr='%s' prefixlen=%d flags='%s'\n",
          ifcfg.hwaddr.string(), ifcfg.ipaddr.string(), ifcfg.prefixLength, ifcfg.flags.string());
     ifcfg.flags = replaceString(ifcfg.flags, sname[1 - astate], sname[astate]);
-    data = ncommand(String8::format("interface setcfg %s %s %d %s", mInterface.string(),
-        ifcfg.ipaddr.string(), ifcfg.prefixLength, ifcfg.flags.string()));
+    data = ncommand("interface setcfg %s %s %d %s", mInterface.string(),
+        ifcfg.ipaddr.string(), ifcfg.prefixLength, ifcfg.flags.string());
     code = extractCode(data.string());
     if (!(code >= 200))
         SLOGW("WifiStateMachine::setInterfaceState(): Unable to set interface %s\n", 
@@ -463,7 +470,7 @@ void WifiStateMachine::setInterfaceState(int astate)
 stateprocess_t WifiStateMachineActions::Driver_Loaded_process(Message *message)
 {
     if (message->command() == CMD_START_SUPPLICANT) {
-        ncommand(String8::format("softap fwreload %s STA", mInterface.string()));
+        ncommand("softap fwreload %s STA", mInterface.string());
         setInterfaceState(0);
         if (request_wifi(WIFI_START_SUPPLICANT)) {
             transitionTo(DRIVER_UNLOADING_STATE);
@@ -749,7 +756,7 @@ stateprocess_t WifiStateMachineActions::Supplicant_Started_process(Message *mess
 void WifiStateMachineActions::Supplicant_Started_exit(void)
 {
     request_wifi(DHCP_STOP);
-    ncommand(String8::format("interface clearaddrs %s", mInterface.string()));
+    ncommand("interface clearaddrs %s", mInterface.string());
     // Update the Wifi Information visible to the user
     Mutex::Autolock _l(mReadLock);
     mWifiInformation.ipaddr = "";
@@ -906,7 +913,7 @@ stateprocess_t WifiStateMachineActions::Connecting_process(Message *message)
             dmessage->ipaddr.string(), dmessage->gateway.string(), dmessage->dns1.string(),
             dmessage->dns2.string(), dmessage->server.string());
         // Set a default route
-        ncommand(String8::format("interface route add %s default 0.0.0.0 0 %s", mInterface.string(), dmessage->gateway.string()));
+        ncommand("interface route add %s default 0.0.0.0 0 %s", mInterface.string(), dmessage->gateway.string());
         // Update property system with DNS data for the resolver
         if (fixDnsEntry("net.dns1", dmessage->dns1.string())
          || fixDnsEntry("net.dns2", dmessage->dns2.string())) {
@@ -918,8 +925,8 @@ stateprocess_t WifiStateMachineActions::Connecting_process(Message *message)
                 cmd.appendFormat(" %s", dns1);
             if (strlen(dns2) && !strcmp(dns2,"127.0.0.1"))
                 cmd.appendFormat(" %s", dns2);
-            ncommand(cmd);
-            ncommand(String8::format("resolver setifdns %s", mInterface.string()));
+            ncommand(cmd.string());
+            ncommand("resolver setifdns %s", mInterface.string());
         }
         Mutex::Autolock _l(mReadLock);
         mWifiInformation.ipaddr = dmessage->ipaddr;
@@ -1142,8 +1149,8 @@ void WifiStateMachine::enqueue_network_update(const ConfiguredStation& cs)
 
 void WifiStateMachine::flushDnsCache() 
 {
-    ncommand(String8::format("resolver flushif %s", mInterface.string()));
-    ncommand(String8("resolver flushdefaultif"));
+    ncommand("resolver flushif %s", mInterface.string());
+    ncommand("resolver flushdefaultif");
 }
 
 };  // namespace android

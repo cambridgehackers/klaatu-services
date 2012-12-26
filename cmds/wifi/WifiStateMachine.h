@@ -59,7 +59,7 @@ protected:
     Vector<ConfiguredStation>  mStationsConfig;
     void                       setInterfaceState(int astate);
     void                       flushDnsCache();
-    String8                    ncommand(const String8&);
+    String8                    ncommand(const char *fmt, ...);
 private:
     mutable Mutex              mLock;     // Protects the response queue
     mutable Condition          mCondition;
