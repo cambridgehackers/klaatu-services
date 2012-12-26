@@ -110,6 +110,7 @@ bool StateMachine::threadLoop()
 	}
 	
         while (!message) {
+SLOGV("HHHHHHHHHHH %d %d\n", xsockets[0], extraFd);
             int nfd = xsockets[0] + 1;
             FD_SET(xsockets[0], &readfds);
             if (extraFd != -1) {
