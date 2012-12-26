@@ -900,6 +900,11 @@ stateprocess_t WifiStateMachineActions::sm_default_process(Message *m)
     return SM_DEFAULT;
 }
 
+static NetworkInterface *thisnetwork;
+static void network_cb(void)
+{
+    thisnetwork->process_indication();
+}
 // ------------------------------------------------------------
 WifiStateMachine::WifiStateMachine(const char *interface, WifiService *servicep)
     : mInterface(interface)
@@ -921,6 +926,7 @@ WifiStateMachine::WifiStateMachine(const char *interface, WifiService *servicep)
     /* Connect to a CommandListener daemon (e.g. netd)
       This is a simplified bit of code which expects to only be
       called by a SINGLE thread (no multiplexing of requests from multiple threads).  */
+#if 0
     status_t result = mNetworkInterface->run("NetworkInterface", PRIORITY_NORMAL);
     // INVALID_OPERATION is returned if the thread is already running
     if (result != NO_ERROR && result != INVALID_OPERATION) {  
@@ -928,7 +934,11 @@ WifiStateMachine::WifiStateMachine(const char *interface, WifiService *servicep)
 	exit(1);
     }
     SLOGV("...................WifiStateMachine::startRunning()\n");
-    result = run("WifiStateMachine", PRIORITY_NORMAL);
+#else
+    extraFd = mNetworkInterface->getFd();
+    extraCb = network_cb;
+#endif
+    status_t result = run("WifiStateMachine", PRIORITY_NORMAL);
     LOG_ALWAYS_FATAL_IF(result, "Could not start WifiStateMachine thread due to error %d\n", result);
 }
 
