@@ -14,7 +14,6 @@
 
 namespace android {
 class WifiService;
-class NetworkInterface;
 class WifiStateMachine : public StateMachine 
 {
 public:
@@ -27,6 +26,7 @@ public:
      state and posts them to the state machine.  It runs in its own thread */
     void           Register(const sp<IWifiClient>& client, int flags);
     int            request_wifi(int request);
+    bool           process_indication(void);
     enum { WIFI_LOAD_DRIVER = 1, WIFI_UNLOAD_DRIVER, WIFI_IS_DRIVER_LOADED,
         WIFI_START_SUPPLICANT, WIFI_STOP_SUPPLICANT,
         WIFI_CONNECT_SUPPLICANT, WIFI_CLOSE_SUPPLICANT, WIFI_WAIT_EVENT,
@@ -44,7 +44,6 @@ protected:
     virtual const char *msgStr(int msg_id);
 
     String8        mInterface;
-    NetworkInterface *mNetworkInterface;
     bool           mIsScanMode;
     bool           mEnableRssiPolling;
     bool           mEnableBackgroundScan;
@@ -58,7 +57,19 @@ protected:
     WifiInformation            mWifiInformation;   // Information about the current network
     // TODO:  Probably need a Mutex lock
     Vector<ConfiguredStation>  mStationsConfig;
+    bool setInterfaceState(int astate);
+    void flushDnsCache();
+    Vector<String8> ncommand(const String8&, int *error_code = 0);
+private:
+    mutable Mutex     mLock;     // Protects the response queue
+    mutable Condition mCondition;
+    int               mFd;
+    Vector<String8>   mResponseQueue;
+    int               mSequenceNumber;
+    char              indication_buf[1024];
+    int               indicationstart;
 };
+
 };  // namespace android
 
 #define FSM_DEFINE_ENUMS

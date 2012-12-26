@@ -5,7 +5,6 @@ LOCAL_SRC_FILES:= \
 	klaatuwifi_main.cpp \
 	StateMachine.cpp \
 	StringUtils.cpp \
-	NetworkInterface.cpp \
 	WifiStateMachine.cpp
 
 LOCAL_MODULE:= klaatu_wifiservice

@@ -10,6 +10,7 @@
 #include <ctype.h>
 #include <fcntl.h>
 #include <cutils/properties.h>
+#include <cutils/sockets.h>
 #include <hardware_legacy/wifi.h>
 #include <netutils/dhcp.h>
 #include <utils/String8.h>
@@ -21,7 +22,6 @@
 #include "WifiStateMachine.h"
 #include "StringUtils.h"
 #include "WifiService.h"
-#include "NetworkInterface.h"
 
 namespace android {
 
@@ -46,6 +46,103 @@ public:
     : Message(CMD_ADD_OR_UPDATE_NETWORK) , mConfig(cs) {}
     ConfiguredStation mConfig;
 };
+
+static int extractSequence(const char *buf)
+{
+    int result = 0;
+    const char *p = buf;
+    while (*p && isdigit(*p))
+	result = result * 10 + (*p++ - '0');
+    return (p > buf) ? result : -1 ;
+}
+
+// All messages from the server should have a 3 digit numeric code followed
+// by a sequence number and a text string
+static int extractCode(const char *buf)
+{
+    if (isdigit(buf[0]) && isdigit(buf[1]) && isdigit(buf[2]) && buf[3] == ' ')
+	return extractSequence(buf);
+    return -1;
+}
+
+Vector<String8> WifiStateMachine::ncommand(const String8& command, int *error_code)
+{
+    Vector<String8> response;
+    int code = -1;
+
+    Mutex::Autolock _l(mLock);
+    mResponseQueue.clear();
+    int seqno = mSequenceNumber++;
+
+    String8 message = String8::format("%d %s", seqno, command.string());
+    SLOGV("....WifiStateMachine::message: '%s'\n", message.string());
+    int len = ::write(mFd, message.string(), message.length() + 1);
+    if (len < 0) {
+	perror("Unable to write to daemon socket");
+	exit(1);
+    }
+    while (code < 200 || code >= 600) {
+	while (mResponseQueue.size() == 0)
+	    mCondition.wait(mLock);
+	SLOGV("....WifiStateMachine::response string '%s'", mResponseQueue[0].string());
+	const String8& data(mResponseQueue[0]);
+	code = extractCode(data.string());
+	if (code < 0) 
+	    SLOGE("Failed to extract valid code from '%s'", mResponseQueue[0].string());
+	else {
+	    int s = extractSequence(data.string() + 4);
+	    if (s < 0)
+		SLOGE("Failed to extract valid sequence from '%s'", mResponseQueue[0].string());
+	    else if (s != seqno)
+		SLOGE("Sequence mismatch %d (should be %d)", s, seqno);
+	    else {
+		SLOGV(".....WifiStateMachine::response: %d", code);
+		if (code > 0)
+		    response.push(data);
+	    }
+	}
+	mResponseQueue.removeAt(0);
+    }
+    if (error_code)
+	*error_code = code;
+    SLOGV("....WifiStateMachine::message: '%s' error_code %d\n", message.string(), code);
+    return response;
+}
+
+bool WifiStateMachine::process_indication()
+{
+    int count = ::read(mFd, indication_buf + indicationstart, sizeof(indication_buf) - indicationstart);
+    if (count < 0) {
+        perror("Error reading daemon socket");
+        return true;
+    }
+    count += indicationstart;
+    indicationstart = 0;
+    for (int i = 0 ; i < count ; i++) {
+        if (indication_buf[i] == '\0') {
+        String8 message = String8(indication_buf + indicationstart, i - indicationstart);
+        SLOGV("......extracted message: %s\n", message.string());
+        indicationstart = i + 1;
+        int space_index = message.find(" ");
+        if (space_index > 0) {
+            int code = extractCode(message.string());
+            if (code >= 600) 
+                        SLOGV("....network message=%s\n", message.string());
+            else {
+            Mutex::Autolock _l(mLock);
+            mResponseQueue.push(message);
+            mCondition.signal();
+            }
+        }
+        else
+            SLOGW("WifiStateMachine: Illegal message '%s'\n", message.string());
+        }
+    }
+    if (indicationstart < count) 
+        memcpy(indication_buf, indication_buf+indicationstart, count - indicationstart);
+    indicationstart = count - indicationstart;
+    return false;
+}
 
 int WifiStateMachine::request_wifi(int request)
 {
@@ -336,10 +433,56 @@ static int monitorThread(void *arg)
     return 0;
 }
 
+bool WifiStateMachine::setInterfaceState(int astate) 
+{
+    static const char *sname[] = {"down", "up"};
+    struct {
+        String8 hwaddr;
+        String8 ipaddr;
+        int prefixLength;
+        String8 flags;
+    } ifcfg;
+    int code = 0;
+
+    Vector<String8> response = ncommand(String8::format("interface getcfg %s", mInterface.string()), &code);
+    if (code != 213 || response.size() == 0) {
+	SLOGW("...can't get interface config code=%d\n", code);
+	return false;
+    }
+    // Rsp xx:xx:xx:xx:xx:xx yyy.yyy.yyy.yyy zzz [flag1 flag2 flag3]
+    SLOGV("......parsing: %s\n", response[0].string());
+    Vector<String8> elements = splitString(response[0], ' ', 5);
+    if (elements.size() != 5) {
+	SLOGW("....bad split of interface cmd '%s'\n", response[0].string());
+	return false;
+    }
+    ifcfg.hwaddr = elements[1];
+    ifcfg.ipaddr = elements[2];
+    ifcfg.prefixLength = atoi(elements[3].string());
+    ifcfg.flags = elements[4];
+    SLOGV("..ifcfg hwaddr='%s' ipaddr='%s' prefixlen=%d flags='%s'\n",
+	 ifcfg.hwaddr.string(), ifcfg.ipaddr.string(), ifcfg.prefixLength, ifcfg.flags.string());
+    ifcfg.flags = replaceString(ifcfg.flags, sname[1 - astate], sname[astate]);
+    code = 0;
+    ncommand(String8::format("interface setcfg %s %s %d %s", mInterface.string(),
+	ifcfg.ipaddr.string(), ifcfg.prefixLength, ifcfg.flags.string()), &code);
+    if (!(code >= 200)) {
+	SLOGW("WifiStateMachine::setInterfaceState(): Unable to set interface %s\n", 
+	     mInterface.string());
+	return false;
+    }
+    return true;
+}
+
 stateprocess_t WifiStateMachineActions::Driver_Loaded_process(Message *message)
 {
     if (message->command() == CMD_START_SUPPLICANT) {
-        mNetworkInterface->wifiFirmwareReload("STA");
+        const char *mode = "STA";
+        int code = 0;
+        ncommand(String8::format("softap fwreload %s %s", mInterface.string(), mode), &code);
+        setInterfaceState(0);
+        if (code < 200)
+	    SLOGW("WifiStateMachine::wifiFirmwareReload error=%d\n", code);
         if (request_wifi(WIFI_START_SUPPLICANT)) {
             transitionTo(DRIVER_UNLOADING_STATE);
             return SM_HANDLED;
@@ -624,7 +767,7 @@ stateprocess_t WifiStateMachineActions::Supplicant_Started_process(Message *mess
 void WifiStateMachineActions::Supplicant_Started_exit(void)
 {
     request_wifi(DHCP_STOP);
-    mNetworkInterface->clearInterfaceAddresses();
+    ncommand(String8::format("interface clearaddrs %s", mInterface.string()), NULL);
     // Update the Wifi Information visible to the user
     Mutex::Autolock _l(mReadLock);
     mWifiInformation.ipaddr = "";
@@ -781,12 +924,20 @@ stateprocess_t WifiStateMachineActions::Connecting_process(Message *message)
             dmessage->ipaddr.string(), dmessage->gateway.string(), dmessage->dns1.string(),
             dmessage->dns2.string(), dmessage->server.string());
         // Set a default route
-        mNetworkInterface->setDefaultRoute(dmessage->gateway.string());
+        ncommand(String8::format("interface route add %s default 0.0.0.0 0 %s", mInterface.string(), dmessage->gateway.string()), NULL);
         // Update property system with DNS data for the resolver
         if (fixDnsEntry("net.dns1", dmessage->dns1.string())
          || fixDnsEntry("net.dns2", dmessage->dns2.string())) {
             // ### TODO: Check to make sure they aren't local addresses
-            mNetworkInterface->setDns(dmessage->dns1.string(), dmessage->dns2.string());
+            const char *dns1 = dmessage->dns1.string();
+            const char *dns2 = dmessage->dns2.string();
+            String8 cmd = String8::format("resolver setifdns %s", mInterface.string());
+            if (strlen(dns1) && !strcmp(dns1,"127.0.0.1"))
+	        cmd.appendFormat(" %s", dns1);
+            if (strlen(dns2) && !strcmp(dns2,"127.0.0.1"))
+	        cmd.appendFormat(" %s", dns2);
+            ncommand(cmd, NULL);
+            ncommand(String8::format("resolver setifdns %s", mInterface.string()), NULL);
         }
         Mutex::Autolock _l(mReadLock);
         mWifiInformation.ipaddr = dmessage->ipaddr;
@@ -901,12 +1052,13 @@ stateprocess_t WifiStateMachineActions::sm_default_process(Message *m)
     return SM_DEFAULT;
 }
 
-static NetworkInterface *thisnetwork;
-static void network_cb(void)
+static int network_cb(void *arg)
 {
-SLOGV("BBBBBBBBBBBBBBBBBBBBBBBBefore\n");
-    thisnetwork->process_indication();
-SLOGV("AAAAAAAAAAAAAAAAAAAAAAAAAfter\n");
+    WifiStateMachine *wsm = static_cast<WifiStateMachine *>(arg);
+
+    while (!wsm->process_indication())
+        ;
+    return 0;
 }
 // ------------------------------------------------------------
 WifiStateMachine::WifiStateMachine(const char *interface, WifiService *servicep)
@@ -917,7 +1069,13 @@ WifiStateMachine::WifiStateMachine(const char *interface, WifiService *servicep)
     , mScanResultIsPending(false)
     , mService(servicep)
 {
-    mNetworkInterface = new NetworkInterface(this, mInterface);
+    mSequenceNumber = 0;
+    indicationstart = 0;
+    mFd = socket_local_client("netd", ANDROID_SOCKET_NAMESPACE_RESERVED, SOCK_STREAM);
+    if (mFd < 0) {
+        SLOGW("Could not start connection to socket %s due to error %d\n", "netd", mFd);
+        exit(1);
+    }
     request_wifi(DHCP_STOP);
     request_wifi(WIFI_STOP_SUPPLICANT);
     ADD_ITEMS(mStateMap);
@@ -929,21 +1087,17 @@ WifiStateMachine::WifiStateMachine(const char *interface, WifiService *servicep)
     /* Connect to a CommandListener daemon (e.g. netd)
       This is a simplified bit of code which expects to only be
       called by a SINGLE thread (no multiplexing of requests from multiple threads).  */
-#if 0
-    status_t result = mNetworkInterface->run("NetworkInterface", PRIORITY_NORMAL);
-    // INVALID_OPERATION is returned if the thread is already running
-    if (result != NO_ERROR && result != INVALID_OPERATION) {  
-	SLOGW("Could not start WifiMonitor thread due to error %d\n", result);
-	exit(1);
-    }
+#if 1
+    androidCreateThread(network_cb, this);
     SLOGV("...................WifiStateMachine::startRunning()\n");
 #else
-    extraFd = mNetworkInterface->getFd();
+    extraFd = mFd;
     fcntl(extraFd, F_SETFL, fcntl(extraFd, F_GETFL, 0) | O_NONBLOCK);
     extraCb = network_cb;
 #endif
     status_t result = run("WifiStateMachine", PRIORITY_NORMAL);
     LOG_ALWAYS_FATAL_IF(result, "Could not start WifiStateMachine thread due to error %d\n", result);
+    SLOGV("...................WifiStateMachine::statemachine running()\n");
 }
 
 void WifiStateMachine::invoke_enter(ENTER_EXIT_PROTO fn)
@@ -1002,6 +1156,12 @@ const char * WifiStateMachine::msgStr(int msg_id)
 void WifiStateMachine::enqueue_network_update(const ConfiguredStation& cs)
 {
     enqueue(new AddOrUpdateNetworkMessage(cs));
+}
+
+void WifiStateMachine::flushDnsCache() 
+{
+    ncommand(String8::format("resolver flushif %s", mInterface.string()), NULL);
+    ncommand(String8("resolver flushdefaultif"), NULL);
 }
 
 };  // namespace android
