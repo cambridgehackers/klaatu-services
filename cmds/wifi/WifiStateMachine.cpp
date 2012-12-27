@@ -625,12 +625,8 @@ stateprocess_t WifiStateMachineActions::default_process(Message *message)
     case CMD_SELECT_NETWORK:
     case CMD_ENABLE_NETWORK:
     case CMD_DISABLE_NETWORK:
-        break;
     case CMD_ENABLE_RSSI_POLL:
-        mEnableRssiPolling = message->arg1() != 0;
-        break;
     case CMD_ENABLE_BACKGROUND_SCAN:
-        mEnableBackgroundScan = message->arg1() != 0;
         break;
     default:
         SLOGD("...ERROR - unhandled message %s (%d)\n",
@@ -931,11 +927,18 @@ stateprocess_t WifiStateMachineActions::Driver_Started_process(Message *message)
     }
     return SM_NOT_HANDLED;
 }
+stateprocess_t WifiStateMachineActions::Scan_Mode_process(Message *message)
+{
+    if (message->command() == CMD_START_SCAN) {
+        start_scan(message->arg1() != 0);
+        return SM_HANDLED;
+    }
+    return SM_NOT_HANDLED;
+}
 
 stateprocess_t WifiStateMachineActions::Driver_Stopping_process(Message *message)
 {
     if (message->command() == SUP_STATE_CHANGE_EVENT) {
-        handleSupplicantStateChange(message);
         if (mWifiInformation.supplicant_state != WPA_INTERFACE_DISABLED)
             return SM_HANDLED;
     }
@@ -957,16 +960,15 @@ stateprocess_t WifiStateMachineActions::Connect_Mode_process(Message *message)
         SLOGV("TODO: Authentication failure\n");
         return SM_HANDLED;
     case SUP_STATE_CHANGE_EVENT:
-        handleSupplicantStateChange(message);
         return SM_HANDLED;
     case CMD_DISCONNECT:
-        doWifiBooleanCommand("DISCONNECT");
+        //doWifiBooleanCommand("DISCONNECT");
         return SM_HANDLED;
     case CMD_RECONNECT:
-        doWifiBooleanCommand("RECONNECT");
+        //doWifiBooleanCommand("RECONNECT");
         return SM_HANDLED;
     case CMD_REASSOCIATE:
-        doWifiBooleanCommand("REASSOCIATE");
+        //doWifiBooleanCommand("REASSOCIATE");
         return SM_HANDLED;
     case SUP_SCAN_RESULTS_EVENT:    // Go back to "connect" mode
         doWifiBooleanCommand("AP_SCAN 1");  // CONNECT_MODE
@@ -1001,9 +1003,6 @@ stateprocess_t WifiStateMachineActions::Connect_Mode_process(Message *message)
         }
         mService->BroadcastConfiguredStations(mStationsConfig);
         }
-        break;
-    case NETWORK_DISCONNECTION_EVENT:
-        disable_interface();
         break;
     case CMD_START_SCAN:
         start_scan(message->arg1() != 0);
@@ -1051,14 +1050,12 @@ stateprocess_t WifiStateMachineActions::Connected_process(Message *message)
 {
     switch (message->command()) {
     case CMD_DISCONNECT:
-        doWifiBooleanCommand("DISCONNECT");
+        //doWifiBooleanCommand("DISCONNECT");
         break;
     case CMD_START_SCAN:
         doWifiBooleanCommand("AP_SCAN 2");   // SCAN_ONLY_MODE
         return SM_NOT_HANDLED;
     case CMD_ENABLE_RSSI_POLL:
-        mEnableRssiPolling = (message->arg1());
-        /* fall through */
     case CMD_RSSI_POLL:
         if (mEnableRssiPolling) {
             String8 poll = doWifiStringCommand("SIGNAL_POLL");
@@ -1118,7 +1115,6 @@ stateprocess_t WifiStateMachineActions::Disconnected_process(Message *message)
         return SM_NOT_HANDLED;  // Handle in parent state
 
     case CMD_ENABLE_BACKGROUND_SCAN:
-        mEnableBackgroundScan = message->arg1() != 0;
         doWifiBooleanCommand(mEnableBackgroundScan ? "DRIVER BGSCAN-START" : "DRIVER BGSCAN-STOP");
         return SM_HANDLED;
 
@@ -1153,23 +1149,56 @@ void WifiStateMachine::invoke_enter(ENTER_EXIT_PROTO fn)
     (static_cast<WifiStateMachineActions *>(this)->*static_cast<WENTER_EXIT_PROTO>(fn))();
 }
 
-stateprocess_t WifiStateMachine::invoke_process(PROCESS_PROTO fn, Message *message, STATE_TRANSITION *t)
+stateprocess_t WifiStateMachine::invoke_process(int state, Message *message, STATE_TABLE_TYPE *state_table)
 {
     typedef stateprocess_t (WifiStateMachineActions::*WPROCESS_PROTO)(Message *);
-    stateprocess_t result = (static_cast<WifiStateMachineActions *>(this)->*static_cast<WPROCESS_PROTO>(fn))(message);
-    if (result == SM_DEFAULT) {
-        result = SM_NOT_HANDLED;
-        while (t && t->state) {
-            if (t->event == message->command()) {
-                result = SM_DEFER;
-                if (t->state != DEFER_STATE) {
-                    transitionTo(t->state);
-                    result = SM_HANDLED;
+    stateprocess_t result = SM_NOT_HANDLED;
+    switch (message->command()) {
+    case CMD_ENABLE_RSSI_POLL:
+        mEnableRssiPolling = message->arg1() != 0;
+        break;
+    case CMD_ENABLE_BACKGROUND_SCAN:
+        mEnableBackgroundScan = message->arg1() != 0;
+        break;
+    case NETWORK_DISCONNECTION_EVENT:
+        disable_interface();
+        break;
+    case SUP_STATE_CHANGE_EVENT:
+        handleSupplicantStateChange(message);
+        break;
+    case CMD_DISCONNECT:
+        doWifiBooleanCommand("DISCONNECT");
+        break;
+    case CMD_RECONNECT:
+        doWifiBooleanCommand("RECONNECT");
+        break;
+    case CMD_REASSOCIATE:
+        doWifiBooleanCommand("REASSOCIATE");
+        break;
+    }
+    while (state && result == SM_NOT_HANDLED) {
+        SLOGV("......Processing message %s (%d) in state %s\n", msgStr(message->command()),
+            message->command(), state_table[state].name);
+        PROCESS_PROTO fn = mStateMap[state].mProcess;
+        if (fn) {
+            result = (static_cast<WifiStateMachineActions *>(this)->*static_cast<WPROCESS_PROTO>(fn))(message);
+            if (result == SM_DEFAULT) {
+                STATE_TRANSITION *t = state_table[state].tran;
+                result = SM_NOT_HANDLED;
+                while (t && t->state) {
+                    if (t->event == message->command()) {
+                        result = SM_DEFER;
+                        if (t->state != DEFER_STATE) {
+                            transitionTo(t->state);
+                            result = SM_HANDLED;
+                        }
+                        break;
+                    }
+                    t++;
                 }
-                break;
             }
-            t++;
         }
+        state = mStateMap[state].mParent;
     }
     return result;
 }

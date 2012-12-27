@@ -60,7 +60,7 @@ public:
     void enqueueDelayed(int command, int delay);
     State * mStateMap;
     virtual void invoke_enter(ENTER_EXIT_PROTO) = 0;
-    virtual stateprocess_t invoke_process(PROCESS_PROTO, Message *, STATE_TRANSITION *t) = 0;
+    virtual stateprocess_t invoke_process(int, Message *, STATE_TABLE_TYPE *) = 0;
 protected:
     virtual const char *msgStr(int msg_id) { return ""; }
     int               extraFd;

@@ -19,7 +19,7 @@ class WifiStateMachine : public StateMachine
 public:
     WifiStateMachine(const char *interface, WifiService *servicep);
     void           invoke_enter(ENTER_EXIT_PROTO fn);
-    stateprocess_t invoke_process(PROCESS_PROTO fn, Message *m, STATE_TRANSITION *t);
+    stateprocess_t invoke_process(int, Message *, STATE_TABLE_TYPE *);
 
     void           enqueue_network_update(const ConfiguredStation& cs);
     /* The WifiMonitor watches for supplicant messages about wifi
