@@ -676,7 +676,6 @@ void WifiStateMachineActions::Driver_Unloading_enter(void)
  */
 stateprocess_t WifiStateMachineActions::Supplicant_Starting_process(Message *message)
 {
-    bool something_changed = false;
     if (message->command() == SUP_DISCONNECTION_EVENT) {
         if (++mSupplicantRestartCount <= 5)
             restartSupplicant(this);
@@ -686,52 +685,6 @@ stateprocess_t WifiStateMachineActions::Supplicant_Starting_process(Message *mes
             enqueue(CMD_UNLOAD_DRIVER);
         }
     }
-    if (message->command() != SUP_CONNECTION_EVENT)
-        return SM_DEFAULT;
-    mService->BroadcastState(WS_ENABLED);
-
-    // Returns data = 'Macaddr = XX:XX:XX:XX:XX:XX'
-    String8 data = doWifiStringCommand("DRIVER MACADDR");
-    if (strncmp("Macaddr = ", data.string(), 10)) {
-        SLOGW("Unable to retrieve MAC address in wireless driver\n");
-    } else {
-        Mutex::Autolock _l(mReadLock);
-        mWifiInformation.macaddr = String8(data.string() + 10);
-        mService->BroadcastInformation(mWifiInformation);
-    }
-    {
-    Mutex::Autolock _l(mReadLock);
-    // ### TODO: This can stall.  Not a good idea
-    mStationsConfig.clear();
-    String8 listStr = doWifiStringCommand("LIST_NETWORKS");
-    Vector<String8> lines = splitString(listStr, '\n');
-    // The first line is a header
-    for (size_t i = 1 ; i < lines.size() ; i++) {
-        Vector<String8> result = splitString(lines[i], '\t');
-        ConfiguredStation cs;
-        cs.network_id = atoi(result[0].string());
-        readNetworkVariables(cs);
-        cs.status = ConfiguredStation::ENABLED;
-        if (result.size() > 3) {
-            if (!strcmp(result[3].string(), "[CURRENT]"))
-                cs.status = ConfiguredStation::CURRENT;
-            else if (!strcmp(result[3].string(), "[DISABLED]")) {
-                cs.status = ConfiguredStation::DISABLED;
-                if (doWifiBooleanCommand("ENABLE_NETWORK %d", cs.network_id)) {
-                    something_changed = true;
-                    cs.status = ConfiguredStation::ENABLED;
-                }
-            }
-        }
-        mStationsConfig.push(cs);
-    }
-    }
-    if (something_changed) {
-        doWifiBooleanCommand("AP_SCAN 1");
-        doWifiBooleanCommand("SAVE_CONFIG");
-    }
-    mService->BroadcastConfiguredStations(mStationsConfig);
-    mSupplicantRestartCount = 0;
     return SM_DEFAULT;
 }
 /* This superclass state encapsulates all of:
@@ -969,65 +922,9 @@ stateprocess_t WifiStateMachineActions::Connect_Mode_process(Message *message)
         int network_id = message->arg1();
         SLOGV("TODO: WifiStateMachine.Connect_Mode_process(network_id=%d);\n", network_id);
         } return SM_HANDLED;
-    case NETWORK_CONNECTION_EVENT: {
-        request_wifi(DHCP_DO_REQUEST);
-        Mutex::Autolock _l(mReadLock);
-        mWifiInformation.bssid = message->string();
-        mWifiInformation.network_id = message->arg1();
-        String8 status = doWifiStringCommand("STATUS");
-        SLOGV("....checking status '%s'\n", status.string());
-        Vector<String8> lines = splitString(status, '\n');
-        for (size_t i=0 ; i < lines.size() ; i++) {
-            Vector<String8> pair = splitString(lines[i], '=');
-            if (pair.size() == 2 && pair[0] == "ssid")
-                mWifiInformation.ssid = pair[1];
-        }
-        mService->BroadcastInformation(mWifiInformation);
-        for (size_t i = 0 ; i < mStationsConfig.size() ; i++) {
-            ConfiguredStation& cs = mStationsConfig.editItemAt(i);
-            if (cs.network_id == mWifiInformation.network_id) {
-                if (cs.status == ConfiguredStation::ENABLED)
-                    cs.status = ConfiguredStation::CURRENT;
-                else
-                    SLOGI("WifiStateMachine::networkConnect to disabled station\n");
-                break;
-            }
-        }
-        mService->BroadcastConfiguredStations(mStationsConfig);
-        }
-        break;
     case CMD_START_SCAN:
         start_scan(message->arg1() != 0);
         return SM_HANDLED;
-    }
-    return SM_DEFAULT;
-}
-
-stateprocess_t WifiStateMachineActions::Connecting_process(Message *message)
-{
-    if (message->command() == DHCP_SUCCESS) {
-        const DhcpResultMessage *dmessage = static_cast<DhcpResultMessage *>(message);
-        SLOGV("Got DHCP ipaddr=%s gateway=%s dns1=%s dns2=%s server=%s\n",
-            dmessage->ipaddr.string(), dmessage->gateway.string(), dmessage->dns1.string(),
-            dmessage->dns2.string(), dmessage->server.string());
-        // Set a default route
-        ncommand("interface route add %s default 0.0.0.0 0 %s", mInterface.string(), dmessage->gateway.string());
-        // Update property system with DNS data for the resolver
-        if (fixDnsEntry("net.dns1", dmessage->dns1.string())
-         || fixDnsEntry("net.dns2", dmessage->dns2.string())) {
-            // ### TODO: Check to make sure they aren't local addresses
-            const char *dns1 = dmessage->dns1.string();
-            const char *dns2 = dmessage->dns2.string();
-            if (!strcmp(dns1, "127.0.0.1"))
-                dns1 = "";
-            if (!strcmp(dns2, "127.0.0.1"))
-                dns2 = "";
-            ncommand("resolver setifdns %s %s %s", mInterface.string(), dns1, dns2);
-            ncommand("resolver setifdns %s", mInterface.string());
-        }
-        Mutex::Autolock _l(mReadLock);
-        mWifiInformation.ipaddr = dmessage->ipaddr;
-        mService->BroadcastInformation(mWifiInformation);
     }
     return SM_DEFAULT;
 }
@@ -1131,6 +1028,10 @@ stateprocess_t WifiStateMachineActions::sm_default_process(Message *m)
 {
     return SM_DEFAULT;
 }
+stateprocess_t WifiStateMachineActions::Connecting_process(Message *message)
+{
+    return SM_DEFAULT;
+}
 
 void WifiStateMachine::invoke_enter(ENTER_EXIT_PROTO fn)
 {
@@ -1167,6 +1068,108 @@ stateprocess_t WifiStateMachine::invoke_process(int state, Message *message, STA
     case CMD_REASSOCIATE:
         doWifiBooleanCommand("REASSOCIATE");
         break;
+    case NETWORK_CONNECTION_EVENT: {
+        request_wifi(DHCP_DO_REQUEST);
+        Mutex::Autolock _l(mReadLock);
+        mWifiInformation.bssid = message->string();
+        mWifiInformation.network_id = message->arg1();
+        String8 status = doWifiStringCommand("STATUS");
+        SLOGV("....checking status '%s'\n", status.string());
+        Vector<String8> lines = splitString(status, '\n');
+        for (size_t i=0 ; i < lines.size() ; i++) {
+            Vector<String8> pair = splitString(lines[i], '=');
+            if (pair.size() == 2 && pair[0] == "ssid")
+                mWifiInformation.ssid = pair[1];
+        }
+        mService->BroadcastInformation(mWifiInformation);
+        for (size_t i = 0 ; i < mStationsConfig.size() ; i++) {
+            ConfiguredStation& cs = mStationsConfig.editItemAt(i);
+            if (cs.network_id == mWifiInformation.network_id) {
+                if (cs.status == ConfiguredStation::ENABLED)
+                    cs.status = ConfiguredStation::CURRENT;
+                else
+                    SLOGI("WifiStateMachine::networkConnect to disabled station\n");
+                break;
+            }
+        }
+        mService->BroadcastConfiguredStations(mStationsConfig);
+        }
+        break;
+    case DHCP_SUCCESS: {
+        const DhcpResultMessage *dmessage = static_cast<DhcpResultMessage *>(message);
+        SLOGV("Got DHCP ipaddr=%s gateway=%s dns1=%s dns2=%s server=%s\n",
+            dmessage->ipaddr.string(), dmessage->gateway.string(), dmessage->dns1.string(),
+            dmessage->dns2.string(), dmessage->server.string());
+        // Set a default route
+        ncommand("interface route add %s default 0.0.0.0 0 %s", mInterface.string(), dmessage->gateway.string());
+        // Update property system with DNS data for the resolver
+        if (fixDnsEntry("net.dns1", dmessage->dns1.string())
+         || fixDnsEntry("net.dns2", dmessage->dns2.string())) {
+            // ### TODO: Check to make sure they aren't local addresses
+            const char *dns1 = dmessage->dns1.string();
+            const char *dns2 = dmessage->dns2.string();
+            if (!strcmp(dns1, "127.0.0.1"))
+                dns1 = "";
+            if (!strcmp(dns2, "127.0.0.1"))
+                dns2 = "";
+            ncommand("resolver setifdns %s %s %s", mInterface.string(), dns1, dns2);
+            ncommand("resolver setifdns %s", mInterface.string());
+        }
+        {
+        Mutex::Autolock _l(mReadLock);
+        mWifiInformation.ipaddr = dmessage->ipaddr;
+        mService->BroadcastInformation(mWifiInformation);
+        }
+        break;
+    }
+    case SUP_CONNECTION_EVENT: {
+    bool something_changed = false;
+    mService->BroadcastState(WS_ENABLED);
+
+    // Returns data = 'Macaddr = XX:XX:XX:XX:XX:XX'
+    String8 data = doWifiStringCommand("DRIVER MACADDR");
+    if (strncmp("Macaddr = ", data.string(), 10)) {
+        SLOGW("Unable to retrieve MAC address in wireless driver\n");
+    } else {
+        Mutex::Autolock _l(mReadLock);
+        mWifiInformation.macaddr = String8(data.string() + 10);
+        mService->BroadcastInformation(mWifiInformation);
+    }
+    {
+    Mutex::Autolock _l(mReadLock);
+    // ### TODO: This can stall.  Not a good idea
+    mStationsConfig.clear();
+    String8 listStr = doWifiStringCommand("LIST_NETWORKS");
+    Vector<String8> lines = splitString(listStr, '\n');
+    // The first line is a header
+    for (size_t i = 1 ; i < lines.size() ; i++) {
+        Vector<String8> result = splitString(lines[i], '\t');
+        ConfiguredStation cs;
+        cs.network_id = atoi(result[0].string());
+        readNetworkVariables(cs);
+        cs.status = ConfiguredStation::ENABLED;
+        if (result.size() > 3) {
+            if (!strcmp(result[3].string(), "[CURRENT]"))
+                cs.status = ConfiguredStation::CURRENT;
+            else if (!strcmp(result[3].string(), "[DISABLED]")) {
+                cs.status = ConfiguredStation::DISABLED;
+                if (doWifiBooleanCommand("ENABLE_NETWORK %d", cs.network_id)) {
+                    something_changed = true;
+                    cs.status = ConfiguredStation::ENABLED;
+                }
+            }
+        }
+        mStationsConfig.push(cs);
+    }
+    }
+    if (something_changed) {
+        doWifiBooleanCommand("AP_SCAN 1");
+        doWifiBooleanCommand("SAVE_CONFIG");
+    }
+    mService->BroadcastConfiguredStations(mStationsConfig);
+    mSupplicantRestartCount = 0;
+    break;
+    }
     }
     while (state && result == SM_NOT_HANDLED) {
         SLOGV("......Processing message %s (%d) in state %s\n", msgStr(message->command()),
