@@ -38,13 +38,10 @@ private:
 };
 
 enum stateprocess_t { SM_DEFAULT, SM_HANDLED, SM_NOT_HANDLED, SM_DEFER };
-typedef void (StateMachine::*ENTER_EXIT_PROTO)(void);
 typedef stateprocess_t (StateMachine::*PROCESS_PROTO)(Message *);
 class State {
 public:
-    ENTER_EXIT_PROTO mEnter;
     PROCESS_PROTO    mProcess;
-    ENTER_EXIT_PROTO mExit;
     int              mParent;
     const char *     mName;
 };
@@ -59,7 +56,6 @@ public:
     void enqueue(int command) { enqueue(new Message(command)); }
     void enqueueDelayed(int command, int delay);
     State * mStateMap;
-    virtual void invoke_enter(ENTER_EXIT_PROTO) = 0;
     virtual stateprocess_t invoke_process(int, Message *, STATE_TABLE_TYPE *) = 0;
 protected:
     virtual const char *msgStr(int msg_id) { return ""; }

@@ -47,17 +47,6 @@ static bool isParentOf(State *mStateMap, int a, int b)
     return false;
 }
 
-static void callEnterChain(StateMachine *state_machine, int parent, int state)
-{
-    if (state && state != parent) {
-	callEnterChain(state_machine, parent, state_machine->mStateMap[state].mParent);
-        if (state_machine->mStateMap[state].mEnter) {
-	    SLOGV(".............Calling enter on %s\n", state_table[state].name);
-            state_machine->invoke_enter(state_machine->mStateMap[state].mEnter);
-        }
-    }
-}
-
 void StateMachine::transitionTo(int key)
 {
     if (key == CMD_TERMINATE) {
@@ -85,31 +74,14 @@ bool StateMachine::threadLoop()
             else while (parent && !isParentOf(mStateMap, parent, mTargetState)) {
 	    	parent = mStateMap[parent].mParent;
             }
-	    if (mCurrentState) {
-		SLOGV("......Exiting state %s\n", state_table[mCurrentState].name);
-		int state = mCurrentState;
-		while (state && state != parent) {
-                    if (mStateMap[state].mExit) {
-		        SLOGV(".............Calling exit on %s\n", state_table[state].name);
-                        invoke_enter(mStateMap[state].mExit);
-                    }
-	    	    state = mStateMap[state].mParent;
-		}
-	    }
 	    mCurrentState = mTargetState;
 	    while (mDeferedMessages.size() > 0) {
  	        Message *m = mDeferedMessages[0];
  		mDeferedMessages.removeAt(0);
                 enqueue(m);
 	    }
-	    if (mCurrentState) {
+	    if (mCurrentState)
 		SLOGV("......Entering state %s\n", state_table[mCurrentState].name);
-		callEnterChain(this, parent, mCurrentState);
-	    }
-	    else {
-		SLOGV("......Terminating state machine\n");
-		return false;
-	    }
 	}
 	
         while (!message) {

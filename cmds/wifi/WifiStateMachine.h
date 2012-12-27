@@ -18,7 +18,6 @@ class WifiStateMachine : public StateMachine
 {
 public:
     WifiStateMachine(const char *interface, WifiService *servicep);
-    void           invoke_enter(ENTER_EXIT_PROTO fn);
     stateprocess_t invoke_process(int, Message *, STATE_TABLE_TYPE *);
 
     void           enqueue_network_update(const ConfiguredStation& cs);
@@ -45,7 +44,6 @@ protected:
     virtual const char *msgStr(int msg_id);
 
     String8        mInterface;
-    bool           mIsScanMode;
     bool           mEnableRssiPolling;
     bool           mEnableBackgroundScan;
     bool           mScanResultIsPending;
