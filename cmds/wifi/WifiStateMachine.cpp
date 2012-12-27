@@ -172,6 +172,13 @@ int WifiStateMachine::request_wifi(int request)
         break;
         }
     case WIFI_LOAD_DRIVER:
+        /*
+          The Driver states refer to the kernel model.  Executing
+          "wifi_load_driver()" causes the appropriate kernel model for your
+          board to be inserted and executes a firmware loader.  
+          This is tied in tightly to the property system, looking at the
+          "wlan.driver.status" property to see if the driver has been loaded.
+         */
         ret = wifi_load_driver();
         enqueue(!ret ? CMD_LOAD_DRIVER_SUCCESS : CMD_LOAD_DRIVER_FAILURE);
         break;
@@ -610,23 +617,27 @@ void WifiStateMachine::flushDnsCache()
 
 // ------------------------------------------------------------
 
-/*
-  The Driver states refer to the kernel model.  Executing
-  "wifi_load_driver()" causes the appropriate kernel model for your
-  board to be inserted and executes a firmware loader.  
-  This is tied in tightly to the property system, looking at the
-  "wlan.driver.status" property to see if the driver has been loaded.
- */
-void WifiStateMachineActions::Driver_Loading_enter(void)
+void WifiStateMachineActions::Disconnected_enter(void)
 {
-    mService->BroadcastState(WS_ENABLING);
-    if (request_wifi(WIFI_LOAD_DRIVER))
-        mService->BroadcastState(WS_UNKNOWN);
+    if (mEnableBackgroundScan && !mScanResultIsPending)
+        doWifiBooleanCommand("DRIVER BGSCAN-START");
 }
 
-void WifiStateMachineActions::Driver_Unloading_enter(void)
+void WifiStateMachineActions::Connected_exit(void)
 {
-    mService->BroadcastState(request_wifi(WIFI_UNLOAD_DRIVER) ? WS_UNKNOWN : WS_DISABLED);
+    if (mScanResultIsPending)
+        doWifiBooleanCommand("AP_SCAN 1");  // CONNECT_MODE
+}
+
+void WifiStateMachineActions::Supplicant_Started_exit(void)
+{
+    disable_interface();
+}
+
+void WifiStateMachineActions::Disconnected_exit(void)
+{
+    if (mEnableBackgroundScan)
+        doWifiBooleanCommand("DRIVER BGSCAN-STOP");
 }
 
 /*
@@ -675,11 +686,6 @@ stateprocess_t WifiStateMachineActions::Supplicant_Started_process(Message *mess
     return SM_DEFAULT;
 }
 
-void WifiStateMachineActions::Supplicant_Started_exit(void)
-{
-    disable_interface();
-}
-
 stateprocess_t WifiStateMachineActions::Supplicant_Stopping_process(Message *message)
 {
     mService->BroadcastState(WS_DISABLING);
@@ -687,27 +693,6 @@ stateprocess_t WifiStateMachineActions::Supplicant_Stopping_process(Message *mes
         request_wifi(WIFI_STOP_SUPPLICANT);
     transitionTo(DRIVER_LOADED_STATE);
     return SM_HANDLED;
-}
-
-/*
-  The Driver Start/Stop states are all about controlling if the
-  interface is running or not (wpa_state=WPA_INTERFACE_DISABLED).
-  This is changed with the wpa_cli command "driver start" and "driver stop"
- */
-void WifiStateMachineActions::Driver_Started_enter(void)
-{
-    // Set country code if available
-    // setFrequencyBand();
-//    setNetworkDetailedState(DISCONNECTED);
-    if (mIsScanMode) {
-        doWifiBooleanCommand("AP_SCAN 2");  // SCAN_ONLY_MODE
-        doWifiBooleanCommand("DISCONNECT");
-        transitionTo(SCAN_MODE_STATE);
-    } else {
-        doWifiBooleanCommand("AP_SCAN 1");  // CONNECT_MODE
-        doWifiBooleanCommand("RECONNECT");
-        transitionTo(DISCONNECTED_STATE);
-    }
 }
 
 stateprocess_t WifiStateMachineActions::Driver_Started_process(Message *message)
@@ -764,12 +749,6 @@ stateprocess_t WifiStateMachineActions::Connect_Mode_process(Message *message)
     return SM_DEFAULT;
 }
 
-void WifiStateMachineActions::Connected_enter(void)
-{
-    if (mEnableRssiPolling)
-        enqueueDelayed(CMD_RSSI_POLL, RSSI_POLL_INTERVAL_MSECS);
-}
-
 stateprocess_t WifiStateMachineActions::Connected_process(Message *message)
 {
     switch (message->command()) {
@@ -783,23 +762,11 @@ stateprocess_t WifiStateMachineActions::Connected_process(Message *message)
     return SM_DEFAULT;
 }
 
-void WifiStateMachineActions::Connected_exit(void)
-{
-    if (mScanResultIsPending)
-        doWifiBooleanCommand("AP_SCAN 1");  // CONNECT_MODE
-}
-
 stateprocess_t WifiStateMachineActions::Disconnecting_process(Message *message)
 {
     if (message->command() == SUP_STATE_CHANGE_EVENT)
         disable_interface();
     return SM_DEFAULT;
-}
-
-void WifiStateMachineActions::Disconnected_enter(void)
-{
-    if (mEnableBackgroundScan && !mScanResultIsPending)
-        doWifiBooleanCommand("DRIVER BGSCAN-START");
 }
 
 stateprocess_t WifiStateMachineActions::Disconnected_process(Message *message)
@@ -822,12 +789,6 @@ stateprocess_t WifiStateMachineActions::Disconnected_process(Message *message)
         return SM_NOT_HANDLED;  // Handle in parent state
     }
     return SM_NOT_HANDLED;
-}
-
-void WifiStateMachineActions::Disconnected_exit(void)
-{
-    if (mEnableBackgroundScan)
-        doWifiBooleanCommand("DRIVER BGSCAN-STOP");
 }
 
 stateprocess_t WifiStateMachineActions::Driver_Failed_process(Message *m)
@@ -854,6 +815,14 @@ stateprocess_t WifiStateMachine::invoke_process(int state, Message *message, STA
     switch (message->command()) {
     case AUTHENTICATION_FAILURE_EVENT:
         SLOGV("TODO: Authentication failure\n");
+        break;
+    case CMD_LOAD_DRIVER:
+        mService->BroadcastState(WS_ENABLING);
+        if (request_wifi(WIFI_LOAD_DRIVER))
+            mService->BroadcastState(WS_UNKNOWN);
+        break;
+    case CMD_UNLOAD_DRIVER:
+        mService->BroadcastState(request_wifi(WIFI_UNLOAD_DRIVER) ? WS_UNKNOWN : WS_DISABLED);
         break;
     case CMD_ENABLE_RSSI_POLL:
         mEnableRssiPolling = message->arg1() != 0;
@@ -954,8 +923,10 @@ stateprocess_t WifiStateMachine::invoke_process(int state, Message *message, STA
         mWifiInformation.ipaddr = dmessage->ipaddr;
         mService->BroadcastInformation(mWifiInformation);
         }
+        if (mEnableRssiPolling)
+            enqueueDelayed(CMD_RSSI_POLL, RSSI_POLL_INTERVAL_MSECS);
         break;
-    }
+        }
     case SUP_CONNECTION_EVENT: {
         bool something_changed = false;
         mService->BroadcastState(WS_ENABLED);
@@ -1001,6 +972,20 @@ stateprocess_t WifiStateMachine::invoke_process(int state, Message *message, STA
         }
         mService->BroadcastConfiguredStations(mStationsConfig);
         mSupplicantRestartCount = 0;
+{
+    // Set country code if available
+    // setFrequencyBand();
+//    setNetworkDetailedState(DISCONNECTED);
+    if (mIsScanMode) {
+        doWifiBooleanCommand("AP_SCAN 2");  // SCAN_ONLY_MODE
+        doWifiBooleanCommand("DISCONNECT");
+        transitionTo(SCAN_MODE_STATE);
+    } else {
+        doWifiBooleanCommand("AP_SCAN 1");  // CONNECT_MODE
+        doWifiBooleanCommand("RECONNECT");
+        transitionTo(DISCONNECTED_STATE);
+    }
+}
         break;
         }
     case SUP_SCAN_RESULTS_EVENT: {
