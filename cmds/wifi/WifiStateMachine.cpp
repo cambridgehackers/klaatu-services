@@ -957,18 +957,10 @@ stateprocess_t WifiStateMachineActions::Connect_Mode_process(Message *message)
 {
     switch (message->command()) {
     case AUTHENTICATION_FAILURE_EVENT:
-        SLOGV("TODO: Authentication failure\n");
-        return SM_HANDLED;
     case SUP_STATE_CHANGE_EVENT:
-        return SM_HANDLED;
     case CMD_DISCONNECT:
-        //doWifiBooleanCommand("DISCONNECT");
-        return SM_HANDLED;
     case CMD_RECONNECT:
-        //doWifiBooleanCommand("RECONNECT");
-        return SM_HANDLED;
     case CMD_REASSOCIATE:
-        //doWifiBooleanCommand("REASSOCIATE");
         return SM_HANDLED;
     case SUP_SCAN_RESULTS_EVENT:    // Go back to "connect" mode
         doWifiBooleanCommand("AP_SCAN 1");  // CONNECT_MODE
@@ -1049,9 +1041,6 @@ void WifiStateMachineActions::Connected_enter(void)
 stateprocess_t WifiStateMachineActions::Connected_process(Message *message)
 {
     switch (message->command()) {
-    case CMD_DISCONNECT:
-        //doWifiBooleanCommand("DISCONNECT");
-        break;
     case CMD_START_SCAN:
         doWifiBooleanCommand("AP_SCAN 2");   // SCAN_ONLY_MODE
         return SM_NOT_HANDLED;
@@ -1154,6 +1143,9 @@ stateprocess_t WifiStateMachine::invoke_process(int state, Message *message, STA
     typedef stateprocess_t (WifiStateMachineActions::*WPROCESS_PROTO)(Message *);
     stateprocess_t result = SM_NOT_HANDLED;
     switch (message->command()) {
+    case AUTHENTICATION_FAILURE_EVENT:
+        SLOGV("TODO: Authentication failure\n");
+        break;
     case CMD_ENABLE_RSSI_POLL:
         mEnableRssiPolling = message->arg1() != 0;
         break;
