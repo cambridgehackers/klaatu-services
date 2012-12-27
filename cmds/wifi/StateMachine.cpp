@@ -34,19 +34,6 @@ void StateMachine::enqueueDelayed(int command, int delay)
     mDelayedMessages.push(message);
 }
 
-// Return true if 'a' is a parent of 'b' or if 'a' == 'b'
-static bool isParentOf(State *mStateMap, int a, int b)
-{
-    if (!a)
-	return true;  // The Null state is always a parent
-    while (b) {
-	if (b == a)
-	    return true;
-	b = mStateMap[b].mParent;
-    }
-    return false;
-}
-
 void StateMachine::transitionTo(int key)
 {
     if (key == CMD_TERMINATE) {
@@ -67,22 +54,16 @@ bool StateMachine::threadLoop()
     initstates();
     while (!exitPending()) {
         Message *message = NULL;
-	if (mTargetState != mCurrentState) {
-	    int parent = mCurrentState;
-            if (isParentOf(mStateMap, mTargetState,parent))
-	        parent = mTargetState;
-            else while (parent && !isParentOf(mStateMap, parent, mTargetState)) {
-	    	parent = mStateMap[parent].mParent;
-            }
+	//if (mTargetState != mCurrentState) {
 	    mCurrentState = mTargetState;
 	    while (mDeferedMessages.size() > 0) {
  	        Message *m = mDeferedMessages[0];
  		mDeferedMessages.removeAt(0);
                 enqueue(m);
 	    }
-	    if (mCurrentState)
-		SLOGV("......Entering state %s\n", state_table[mCurrentState].name);
-	}
+	  //  if (mCurrentState)
+		//SLOGV("......Entering state %s\n", state_table[mCurrentState].name);
+	////}
 	
         while (!message) {
             int nfd = xsockets[0] + 1;
