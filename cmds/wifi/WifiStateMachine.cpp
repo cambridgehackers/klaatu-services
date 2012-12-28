@@ -84,7 +84,7 @@ String8 WifiStateMachine::ncommand(const char *fmt, ...)
     va_end(args);
 
     //String8 message = String8::format("%d %s", seqno, buf);
-    SLOGV(".....Netd:          '%s'\n", buf);
+    SLOGV("....Netd:          '%s'\n", buf);
     int len = ::write(mFd, buf, strlen(buf) + 1);
     if (len < 0) {
         perror("Unable to write to daemon socket");
@@ -96,7 +96,7 @@ String8 WifiStateMachine::ncommand(const char *fmt, ...)
         response = mResponseQueue[0];
         mResponseQueue.removeAt(0);
         code = extractCode(response.string());
-        SLOGV(".....Netd: resp '%s'", response.string());
+        SLOGV("....Netd: resp '%s'", response.string());
     }
     return response;
 }
@@ -214,7 +214,7 @@ int WifiStateMachine::request_wifi(int request)
             buf += len;
             event = event_map[event].event;
             if (event != CTRL_EVENT_BSS_ADDED && event != CTRL_EVENT_BSS_REMOVED)
-                SLOGV(".....EVENT: '%s' event %s\n", rbuf, msgStr(event));
+                SLOGV("....EVENT: '%s' event %s\n", rbuf, msgStr(event));
             switch (event) {
             case NETWORK_CONNECTION_EVENT: {
                 /* Regex pattern for extracting an Ethernet-style MAC address from a string.
@@ -743,6 +743,8 @@ stateprocess_t WifiStateMachineActions::Disconnected_process(Message *message)
             doWifiBooleanCommand("DRIVER BGSCAN-STOP");
         start_scan(message->arg1() != 0);
         return SM_HANDLED;
+    case SUP_STATE_CHANGE_EVENT:
+        return SM_HANDLED;
     case CMD_ENABLE_BACKGROUND_SCAN:
         doWifiBooleanCommand(mEnableBackgroundScan ? "DRIVER BGSCAN-START" : "DRIVER BGSCAN-STOP");
         return SM_HANDLED;
@@ -795,7 +797,7 @@ stateprocess_t WifiStateMachine::invoke_process(int state, Message *message, STA
     stateprocess_t result = SM_NOT_HANDLED;
     int network_id = message->arg1();
 
-    SLOGV("......Start processing message %s (%d) in state %s\n", msgStr(message->command()),
+    SLOGV("....Start processing message %s (%d) in state %s\n", msgStr(message->command()),
         message->command(), state_table[state].name);
     switch (message->command()) {
     case AUTHENTICATION_FAILURE_EVENT:
