@@ -549,7 +549,6 @@ WifiStateMachine::WifiStateMachine(const char *interface, WifiService *servicep)
     request_wifi(DHCP_STOP);
     request_wifi(WIFI_STOP_SUPPLICANT);
     ADD_ITEMS(mStateMap);
-    //transitionTo(INITIAL_STATE);
     if (request_wifi(WIFI_IS_DRIVER_LOADED))
         transitionTo(DRIVER_LOADED_STATE);
     else
@@ -653,7 +652,6 @@ stateprocess_t WifiStateMachineActions::Supplicant_Started_process(Message *mess
         // mWpsStateMachine.sendMessage(CMD_RESET_WPS_STATE);
         break;
     case SUP_SCAN_RESULTS_EVENT:
-    //case CMD_ADD_OR_UPDATE_NETWORK: case CMD_SELECT_NETWORK: case CMD_ENABLE_NETWORK: case CMD_DISABLE_NETWORK: case CMD_REMOVE_NETWORK:
         return SM_HANDLED;
     case CMD_STOP_SUPPLICANT:
         disable_interface();
@@ -697,7 +695,6 @@ stateprocess_t WifiStateMachineActions::Connect_Mode_process(Message *message)
     case CMD_RECONNECT:
     case CMD_REASSOCIATE:
     case CMD_CONNECT_NETWORK:
-    //case CMD_ADD_OR_UPDATE_NETWORK: case CMD_SELECT_NETWORK: case CMD_ENABLE_NETWORK: case CMD_DISABLE_NETWORK: case CMD_REMOVE_NETWORK:
         return SM_HANDLED;
     case SUP_SCAN_RESULTS_EVENT:    // Go back to "connect" mode
         doWifiBooleanCommand("AP_SCAN 1");  // CONNECT_MODE
@@ -714,10 +711,8 @@ stateprocess_t WifiStateMachineActions::Connected_process(Message *message)
     switch (message->command()) {
     case CMD_START_SCAN:
         doWifiBooleanCommand("AP_SCAN 2");   // SCAN_ONLY_MODE
-///
         start_scan(message->arg1() != 0);
         return SM_HANDLED;
-        //return SM_NOT_HANDLED;
     case CMD_RSSI_POLL: case CMD_ENABLE_RSSI_POLL:
         return SM_HANDLED;
     case SUP_STATE_CHANGE_EVENT:
@@ -743,10 +738,8 @@ stateprocess_t WifiStateMachineActions::Disconnected_process(Message *message)
         /* Disable background scan temporarily during a regular scan */
         if (mEnableBackgroundScan)
             doWifiBooleanCommand("DRIVER BGSCAN-STOP");
-///
         start_scan(message->arg1() != 0);
         return SM_HANDLED;
-        //break;
     case CMD_ENABLE_BACKGROUND_SCAN:
         doWifiBooleanCommand(mEnableBackgroundScan ? "DRIVER BGSCAN-START" : "DRIVER BGSCAN-STOP");
         return SM_HANDLED;
@@ -960,16 +953,10 @@ stateprocess_t WifiStateMachine::invoke_process(int state, Message *message, STA
         mSupplicantRestartCount = 0;
         // Set country code if available
         // setFrequencyBand();
-        //    setNetworkDetailedState(DISCONNECTED);
-        //if (mIsScanMode) {
-            //doWifiBooleanCommand("AP_SCAN 2");  // SCAN_ONLY_MODE
-            //doWifiBooleanCommand("DISCONNECT");
-            //transitionTo(SCAN_MODE_STATE);
-        //} else {
-            doWifiBooleanCommand("AP_SCAN 1");  // CONNECT_MODE
-            doWifiBooleanCommand("RECONNECT");
-            transitionTo(DISCONNECTED_STATE);
-        //}
+        // setNetworkDetailedState(DISCONNECTED);
+        doWifiBooleanCommand("AP_SCAN 1");  // CONNECT_MODE
+        doWifiBooleanCommand("RECONNECT");
+        transitionTo(DISCONNECTED_STATE);
         break;
         }
     case SUP_SCAN_RESULTS_EVENT: {
