@@ -84,7 +84,7 @@ String8 WifiStateMachine::ncommand(const char *fmt, ...)
     va_end(args);
 
     //String8 message = String8::format("%d %s", seqno, buf);
-    SLOGV("....Netd:          '%s'\n", buf);
+    SLOGV(".....Netd:          '%s'\n", buf);
     int len = ::write(mFd, buf, strlen(buf) + 1);
     if (len < 0) {
         perror("Unable to write to daemon socket");
@@ -96,7 +96,7 @@ String8 WifiStateMachine::ncommand(const char *fmt, ...)
         response = mResponseQueue[0];
         mResponseQueue.removeAt(0);
         code = extractCode(response.string());
-        SLOGV("....Netd: resp '%s'", response.string());
+        SLOGV(".....Netd: resp '%s'", response.string());
     }
     return response;
 }
@@ -214,7 +214,7 @@ int WifiStateMachine::request_wifi(int request)
             buf += len;
             event = event_map[event].event;
             if (event != CTRL_EVENT_BSS_ADDED && event != CTRL_EVENT_BSS_REMOVED)
-                SLOGV("....EVENT: '%s' event %s\n", rbuf, msgStr(event));
+                SLOGV(".....EVENT: '%s' event %s\n", rbuf, msgStr(event));
             switch (event) {
             case NETWORK_CONNECTION_EVENT: {
                 /* Regex pattern for extracting an Ethernet-style MAC address from a string.
@@ -639,7 +639,7 @@ stateprocess_t WifiStateMachineActions::Supplicant_Starting_process(Message *mes
     return SM_DEFAULT;
 }
 
-stateprocess_t WifiStateMachineActions::Supplicant_Started_process(Message *message)
+stateprocess_t WifiStateMachineActions::Driver_Stopped_process(Message *message)
 {
     switch (message->command()) {
     case SUP_DISCONNECTION_EVENT:
@@ -671,8 +671,21 @@ stateprocess_t WifiStateMachineActions::Driver_Started_process(Message *message)
     case SUP_SCAN_RESULTS_EVENT:
     case SUP_STATE_CHANGE_EVENT:
         return SM_HANDLED;
+    case SUP_DISCONNECTION_EVENT:
+        restartSupplicant(this);
+        request_wifi(WIFI_CLOSE_SUPPLICANT);
+        // mNetworkInfo.setIsAvailable(false);
+        disable_interface();
+        // sendSupplicantConnectionChangedBroadcast(false);
+        // mSupplicantStateTracker.sendMessage(CMD_RESET_SUPPLICANT_STATE);
+        // mWpsStateMachine.sendMessage(CMD_RESET_WPS_STATE);
+        break;
+    case CMD_STOP_SUPPLICANT:
+        disable_interface();
+        break;
     }
-    return SM_NOT_HANDLED;
+    return SM_DEFAULT;
+
 }
 stateprocess_t WifiStateMachineActions::Scan_Mode_process(Message *message)
 {
@@ -743,8 +756,6 @@ stateprocess_t WifiStateMachineActions::Disconnected_process(Message *message)
             doWifiBooleanCommand("DRIVER BGSCAN-STOP");
         start_scan(message->arg1() != 0);
         return SM_HANDLED;
-    case SUP_STATE_CHANGE_EVENT:
-        return SM_HANDLED;
     case CMD_ENABLE_BACKGROUND_SCAN:
         doWifiBooleanCommand(mEnableBackgroundScan ? "DRIVER BGSCAN-START" : "DRIVER BGSCAN-STOP");
         return SM_HANDLED;
@@ -768,10 +779,28 @@ stateprocess_t WifiStateMachineActions::Supplicant_Stopping_process(Message *mes
 
 stateprocess_t WifiStateMachineActions::Driver_Stopping_process(Message *message)
 {
-    if (message->command() == SUP_STATE_CHANGE_EVENT
-     && mWifiInformation.supplicant_state != WPA_INTERFACE_DISABLED)
+    switch (message->command()) {
+    case SUP_STATE_CHANGE_EVENT:
+        if (mWifiInformation.supplicant_state != WPA_INTERFACE_DISABLED)
+            return SM_HANDLED;
+        break;
+    case SUP_DISCONNECTION_EVENT:
+        restartSupplicant(this);
+        request_wifi(WIFI_CLOSE_SUPPLICANT);
+        // mNetworkInfo.setIsAvailable(false);
+        disable_interface();
+        // sendSupplicantConnectionChangedBroadcast(false);
+        // mSupplicantStateTracker.sendMessage(CMD_RESET_SUPPLICANT_STATE);
+        // mWpsStateMachine.sendMessage(CMD_RESET_WPS_STATE);
+        break;
+    case SUP_SCAN_RESULTS_EVENT:
         return SM_HANDLED;
+    case CMD_STOP_SUPPLICANT:
+        disable_interface();
+        break;
+    }
     return SM_DEFAULT;
+
 }
 
 stateprocess_t WifiStateMachineActions::Disconnecting_process(Message *message)
@@ -797,7 +826,7 @@ stateprocess_t WifiStateMachine::invoke_process(int state, Message *message, STA
     stateprocess_t result = SM_NOT_HANDLED;
     int network_id = message->arg1();
 
-    SLOGV("....Start processing message %s (%d) in state %s\n", msgStr(message->command()),
+    SLOGV("......Start processing message %s (%d) in state %s\n", msgStr(message->command()),
         message->command(), state_table[state].name);
     switch (message->command()) {
     case AUTHENTICATION_FAILURE_EVENT:
@@ -1139,6 +1168,17 @@ caseover:;
                             transitionTo(t->state);
                             result = SM_HANDLED;
                         }
+                        break;
+                    }
+                    t++;
+                }
+            }
+            if (result == SM_NOT_HANDLED) {
+                STATE_TRANSITION *t = state_table[DEFAULT_STATE].tran;
+                while (t && t->state) {
+                    if (t->event == message->command()) {
+                        transitionTo(t->state);
+                        result = SM_HANDLED;
                         break;
                     }
                     t++;
