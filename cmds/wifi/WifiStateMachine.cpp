@@ -669,6 +669,7 @@ stateprocess_t WifiStateMachineActions::Driver_Started_process(Message *message)
             doWifiBooleanCommand("DRIVER BGSCAN-START");
         return SM_HANDLED;
     case SUP_SCAN_RESULTS_EVENT:
+    case SUP_STATE_CHANGE_EVENT:
         return SM_HANDLED;
     }
     return SM_NOT_HANDLED;
