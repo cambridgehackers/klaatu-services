@@ -214,7 +214,7 @@ int WifiStateMachine::request_wifi(int request)
             buf += len;
             event = event_map[event].event;
             if (event != CTRL_EVENT_BSS_ADDED && event != CTRL_EVENT_BSS_REMOVED)
-                SLOGV(".....EVENT: '%s' event %d\n", rbuf, event);
+                SLOGV(".....EVENT: '%s' event %s\n", rbuf, msgStr(event));
             switch (event) {
             case NETWORK_CONNECTION_EVENT: {
                 /* Regex pattern for extracting an Ethernet-style MAC address from a string.
@@ -794,6 +794,9 @@ stateprocess_t WifiStateMachine::invoke_process(int state, Message *message, STA
     typedef stateprocess_t (WifiStateMachineActions::*WPROCESS_PROTO)(Message *);
     stateprocess_t result = SM_NOT_HANDLED;
     int network_id = message->arg1();
+
+    SLOGV("......Start processing message %s (%d) in state %s\n", msgStr(message->command()),
+        message->command(), state_table[state].name);
     switch (message->command()) {
     case AUTHENTICATION_FAILURE_EVENT:
         SLOGV("TODO: Authentication failure\n");
@@ -1115,10 +1118,13 @@ stateprocess_t WifiStateMachine::invoke_process(int state, Message *message, STA
         break;
     }
 caseover:;
+    int first = 1;
     while (state && result == SM_NOT_HANDLED) {
-        SLOGV("......Processing message %s (%d) in state %s\n", msgStr(message->command()),
-            message->command(), state_table[state].name);
         PROCESS_PROTO fn = mStateMap[state].mProcess;
+        if (!first)
+            SLOGV("......Processing message %s (%d) in state %s\n", msgStr(message->command()),
+                message->command(), state_table[state].name);
+        first = 0;
         if (fn) {
             result = (static_cast<WifiStateMachineActions *>(this)->*static_cast<WPROCESS_PROTO>(fn))(message);
             if (result == SM_DEFAULT) {
