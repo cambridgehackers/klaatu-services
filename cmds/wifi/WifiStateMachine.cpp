@@ -651,8 +651,10 @@ stateprocess_t WifiStateMachineActions::Supplicant_Started_process(Message *mess
         // mSupplicantStateTracker.sendMessage(CMD_RESET_SUPPLICANT_STATE);
         // mWpsStateMachine.sendMessage(CMD_RESET_WPS_STATE);
         break;
+#if 0
     case SUP_SCAN_RESULTS_EVENT:
         return SM_HANDLED;
+#endif
     case CMD_STOP_SUPPLICANT:
         disable_interface();
         break;
@@ -668,9 +670,11 @@ stateprocess_t WifiStateMachineActions::Driver_Started_process(Message *message)
         if (mEnableBackgroundScan && !mScanResultIsPending)
             doWifiBooleanCommand("DRIVER BGSCAN-START");
         return SM_HANDLED;
+#if 0
     case SUP_SCAN_RESULTS_EVENT:
     case CMD_ADD_OR_UPDATE_NETWORK: case CMD_SELECT_NETWORK: case CMD_ENABLE_NETWORK: case CMD_DISABLE_NETWORK: case CMD_REMOVE_NETWORK:
         return SM_HANDLED;
+#endif
     }
     return SM_NOT_HANDLED;
 }
@@ -690,12 +694,14 @@ stateprocess_t WifiStateMachineActions::Connect_Mode_process(Message *message)
         if (mEnableBackgroundScan && !mScanResultIsPending)
             doWifiBooleanCommand("DRIVER BGSCAN-START");
         return SM_HANDLED;
+#if 0
     case AUTHENTICATION_FAILURE_EVENT:
     case CMD_DISCONNECT:
     case CMD_RECONNECT:
     case CMD_REASSOCIATE:
     case CMD_CONNECT_NETWORK:
         return SM_HANDLED;
+#endif
     case SUP_SCAN_RESULTS_EVENT:    // Go back to "connect" mode
         doWifiBooleanCommand("AP_SCAN 1");  // CONNECT_MODE
         return SM_NOT_HANDLED;
