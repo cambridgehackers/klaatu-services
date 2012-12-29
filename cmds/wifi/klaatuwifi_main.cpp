@@ -11,14 +11,11 @@
 
 namespace android {
 
-// ---------------------------------------------------------------------------
-
 class WifiServerClient  
 {
 public:
     WifiServerClient(const sp<android::IWifiClient>& c, WifiClientFlag f=WIFI_CLIENT_FLAG_ALL)
 	: client(c), flags(f) {}
-
     sp<android::IWifiClient> client;
     WifiClientFlag           flags;
 };
@@ -173,13 +170,10 @@ void WifiService::SendCommand(int command, int arg1, int arg2)
     Mutex::Autolock _l(mLock);
     MAPTYPE *pmap = eventmap;
 
-    while (pmap->event) {
-        if (command == pmap->command) {
-	    mWifiStateMachine->enqueue(new Message(pmap->event, arg1, arg2));
-            break;
-        }
+    while (pmap->event && command != pmap->command)
         pmap++;
-    }
+    if (pmap->event)
+	mWifiStateMachine->enqueue(new Message(pmap->event, arg1, arg2));
 }
 
 // ---------------------------------------------------------------------------
@@ -214,10 +208,8 @@ status_t BnWifiService::onTransact( uint32_t code, const Parcel& data, Parcel* r
 
 };  // namespace android
 
-using namespace android;
-
 int main(int argc, char **argv)
 {
-    WifiService::publishAndJoinThreadPool();
+    android::WifiService::publishAndJoinThreadPool();
     return 0;
 }

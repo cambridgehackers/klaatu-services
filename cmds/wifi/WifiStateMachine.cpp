@@ -18,10 +18,20 @@
 #include <src/common/defs.h>   /* WPA_xxx names from external/wpa_supplicant_x */
 
 #include "WifiDebug.h"
-#define FSM_ACTION_CODE
-#include "WifiStateMachine.h"
 #include "StringUtils.h"
 #include "WifiService.h"
+
+typedef struct {
+   int event;
+   int state;
+} STATE_TRANSITION;
+typedef struct {
+    const char *name;
+    STATE_TRANSITION *tran;
+} STATE_TABLE_TYPE;
+
+#define FSM_INITIALIZE_CODE
+#include "WifiStateMachine.h"
 
 namespace android {
 
@@ -539,6 +549,7 @@ WifiStateMachine::WifiStateMachine(const char *interface, WifiService *servicep)
     , mScanResultIsPending(false)
     , mService(servicep)
 {
+    initstates();
     mSequenceNumber = 0;
     indication_start = 0;
     mFd = socket_local_client("netd", ANDROID_SOCKET_NAMESPACE_RESERVED, SOCK_STREAM);
@@ -730,7 +741,7 @@ stateprocess_t WifiStateMachine::process_action(int state, Message *message)
     return SM_DEFAULT;
 }
 
-stateprocess_t WifiStateMachine::invoke_process(int state, Message *message, STATE_TABLE_TYPE *state_table)
+stateprocess_t WifiStateMachine::invoke_process(int state, Message *message)
 {
     stateprocess_t result = SM_NOT_HANDLED;
     int network_id = message->arg1();

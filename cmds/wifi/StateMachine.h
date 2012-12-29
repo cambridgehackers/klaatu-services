@@ -13,14 +13,6 @@
 
 namespace android {
 class StateMachine;
-typedef struct {
-   int event;
-   int state;
-} STATE_TRANSITION;
-typedef struct {
-    const char *name;
-    STATE_TRANSITION *tran;
-} STATE_TABLE_TYPE;
 class Message {
 public:
     Message(int command, int arg1 = -1, int arg2 = -1, const String8& str=String8()) 
@@ -48,7 +40,7 @@ public:
     void enqueue(Message *);
     void enqueue(int command) { enqueue(new Message(command)); }
     void enqueueDelayed(int command, int delay);
-    virtual stateprocess_t invoke_process(int, Message *, STATE_TABLE_TYPE *) = 0;
+    virtual stateprocess_t invoke_process(int, Message *) = 0;
 protected:
     virtual const char *msgStr(int msg_id) { return ""; }
     int               extraFd;

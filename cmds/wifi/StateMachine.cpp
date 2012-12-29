@@ -6,8 +6,6 @@
 #include <sys/socket.h>
 #include "WifiDebug.h"
 #include "StateMachine.h"
-#define FSM_INITIALIZE_CODE
-#include "WifiStateMachine.h"
 
 namespace android {
 
@@ -50,7 +48,6 @@ bool StateMachine::threadLoop()
     struct timeval tv;
 
     FD_ZERO(&readfds);
-    initstates();
     while (!exitPending()) {
         Message *message = NULL;
         mCurrentState = mTargetState;
@@ -84,14 +81,14 @@ bool StateMachine::threadLoop()
                 extraCb();
         }
         const char *msg_str = msgStr(message->command());
-        switch (invoke_process(mCurrentState, message, state_table)) {
+        switch (invoke_process(mCurrentState, message)) {
         case SM_DEFER:
             SLOGV(".......Message %s (%d) is being defered by current state\n", msg_str, message->command());
             mDeferedMessages.push(message);
             break;
         default:
-            SLOGV("Warning!  Message %s (%d) not handled by current state %s\n", 
-                   msg_str, message->command(), state_table[mCurrentState].name);
+            SLOGV("Warning!  Message %s (%d) not handled by current state %d\n", 
+                   msg_str, message->command(), mCurrentState); //state_table[mCurrentState].name);
         case SM_HANDLED:
             delete message;
             break;
