@@ -621,6 +621,22 @@ void WifiStateMachine::flushDnsCache()
 #define STATEEV(STATE, EVENT) ((EVENT) * STATE_MAX + (STATE))
 stateprocess_t WifiStateMachine::process_action(int state, Message *message)
 {
+    switch (state) {
+    case SUPPLICANT_STOPPING_STATE:
+        mService->BroadcastState(WS_DISABLING);
+        if (!doWifiBooleanCommand("TERMINATE"))
+            request_wifi(WIFI_STOP_SUPPLICANT);
+        transitionTo(DRIVER_LOADED_STATE);
+        return SM_HANDLED;
+    case DRIVER_FAILED_STATE:
+        return SM_HANDLED;
+    case DRIVER_LOADING_STATE: case DRIVER_LOADED_STATE:
+    case DRIVER_UNLOADING_STATE: case DRIVER_UNLOADED_STATE:
+        return SM_DEFAULT;
+    case DRIVER_STARTING_STATE:
+        return SM_NOT_HANDLED;
+    }
+
     switch (STATEEV(state, message->command())) {
     case STATEEV(SUPPLICANT_STARTING_STATE, SUP_DISCONNECTION_EVENT):
     case STATEEV(CONNECTING_STATE, SUP_DISCONNECTION_EVENT):
@@ -635,15 +651,6 @@ stateprocess_t WifiStateMachine::process_action(int state, Message *message)
             enqueue(CMD_UNLOAD_DRIVER);
         }
         break;
-    case STATEEV(SUPPLICANT_STARTING_STATE, SUP_STATE_CHANGE_EVENT):
-    case STATEEV(CONNECTING_STATE, SUP_STATE_CHANGE_EVENT):
-    case STATEEV(CONNECTED_STATE, SUP_STATE_CHANGE_EVENT):
-    case STATEEV(DISCONNECTED_STATE, NETWORK_DISCONNECTION_EVENT):
-    case STATEEV(DISCONNECTED_STATE, SUP_STATE_CHANGE_EVENT):
-    case STATEEV(DISCONNECTING_STATE, NETWORK_DISCONNECTION_EVENT):
-        if (mEnableBackgroundScan && !mScanResultIsPending)
-            doWifiBooleanCommand("DRIVER BGSCAN-START");
-        return SM_HANDLED;
     case STATEEV(DRIVER_STOPPED_STATE, SUP_DISCONNECTION_EVENT):
     case STATEEV(DRIVER_STARTED_STATE, SUP_DISCONNECTION_EVENT):
     case STATEEV(SCAN_MODE_STATE, SUP_DISCONNECTION_EVENT):
@@ -669,6 +676,13 @@ stateprocess_t WifiStateMachine::process_action(int state, Message *message)
     case STATEEV(DRIVER_STARTED_STATE, CMD_START_SCAN):
     case STATEEV(SCAN_MODE_STATE, CMD_START_SCAN):
         start_scan(message->arg1() != 0);
+        /* fall through */
+    case STATEEV(SUPPLICANT_STARTING_STATE, SUP_STATE_CHANGE_EVENT):
+    case STATEEV(CONNECTING_STATE, SUP_STATE_CHANGE_EVENT):
+    case STATEEV(CONNECTED_STATE, SUP_STATE_CHANGE_EVENT):
+    case STATEEV(DISCONNECTED_STATE, NETWORK_DISCONNECTION_EVENT):
+    case STATEEV(DISCONNECTED_STATE, SUP_STATE_CHANGE_EVENT):
+    case STATEEV(DISCONNECTING_STATE, NETWORK_DISCONNECTION_EVENT):
         if (mEnableBackgroundScan && !mScanResultIsPending)
             doWifiBooleanCommand("DRIVER BGSCAN-START");
         return SM_HANDLED;
@@ -678,24 +692,28 @@ stateprocess_t WifiStateMachine::process_action(int state, Message *message)
         if (mEnableBackgroundScan && !mScanResultIsPending)
             doWifiBooleanCommand("DRIVER BGSCAN-START");
         break;
+    case STATEEV(DISCONNECTED_STATE, SUP_SCAN_RESULTS_EVENT):
+        /* Re-enable background scan when a pending scan result is received */
+        if (mEnableBackgroundScan && mScanResultIsPending)
+            doWifiBooleanCommand("DRIVER BGSCAN-START");
+        break;
+    case STATEEV(CONNECTED_STATE, DHCP_FAILURE):
+    case STATEEV(CONNECTED_STATE, CMD_DISCONNECT):
+        if (!mScanResultIsPending)
+            break;
+        /* fall through */
     case STATEEV(CONNECTING_STATE, SUP_SCAN_RESULTS_EVENT):    // Go back to "connect" mode
     case STATEEV(CONNECTED_STATE, SUP_SCAN_RESULTS_EVENT):    // Go back to "connect" mode
     case STATEEV(DISCONNECTING_STATE, SUP_SCAN_RESULTS_EVENT):    // Go back to "connect" mode
         doWifiBooleanCommand("AP_SCAN 1");  // CONNECT_MODE
         return SM_HANDLED;
+    case STATEEV(CONNECTED_STATE, CMD_START_SCAN):
+        doWifiBooleanCommand("AP_SCAN 2");   // SCAN_ONLY_MODE
+        /* fall through */
     case STATEEV(CONNECTING_STATE, CMD_START_SCAN):
     case STATEEV(DISCONNECTING_STATE, CMD_START_SCAN):
         start_scan(message->arg1() != 0);
         return SM_HANDLED;
-    case STATEEV(CONNECTED_STATE, CMD_START_SCAN):
-        doWifiBooleanCommand("AP_SCAN 2");   // SCAN_ONLY_MODE
-        start_scan(message->arg1() != 0);
-        return SM_HANDLED;
-    case STATEEV(CONNECTED_STATE, DHCP_FAILURE):
-    case STATEEV(CONNECTED_STATE, CMD_DISCONNECT):
-        if (mScanResultIsPending)
-            doWifiBooleanCommand("AP_SCAN 1");  // CONNECT_MODE
-        break;
     case STATEEV(DISCONNECTED_STATE, CMD_START_SCAN):
         /* Disable background scan temporarily during a regular scan */
         if (mEnableBackgroundScan)
@@ -705,11 +723,6 @@ stateprocess_t WifiStateMachine::process_action(int state, Message *message)
     case STATEEV(DISCONNECTED_STATE, CMD_ENABLE_BACKGROUND_SCAN):
         doWifiBooleanCommand(mEnableBackgroundScan ? "DRIVER BGSCAN-START" : "DRIVER BGSCAN-STOP");
         return SM_HANDLED;
-    case STATEEV(DISCONNECTED_STATE, SUP_SCAN_RESULTS_EVENT):
-        /* Re-enable background scan when a pending scan result is received */
-        if (mEnableBackgroundScan && mScanResultIsPending)
-            doWifiBooleanCommand("DRIVER BGSCAN-START");
-        break;
     case STATEEV(DISCONNECTED_STATE, CMD_DISCONNECT):
     case STATEEV(DISCONNECTING_STATE, CMD_DISCONNECT):
         return SM_HANDLED;
@@ -726,8 +739,7 @@ stateprocess_t WifiStateMachine::invoke_process(int state, Message *message, STA
     switch (message->command()) {
     case AUTHENTICATION_FAILURE_EVENT:
         SLOGV("TODO: Authentication failure\n");
-        result = SM_HANDLED;
-        break;
+        return SM_HANDLED;
     case CMD_LOAD_DRIVER:
         mService->BroadcastState(WS_ENABLING);
         if (request_wifi(WIFI_LOAD_DRIVER))
@@ -764,8 +776,7 @@ stateprocess_t WifiStateMachine::invoke_process(int state, Message *message, STA
             mService->BroadcastInformation(mWifiInformation);
             enqueueDelayed(CMD_RSSI_POLL, RSSI_POLL_INTERVAL_MSECS);
         }
-        result = SM_HANDLED;
-        break;
+        return SM_HANDLED;
     case CMD_ENABLE_BACKGROUND_SCAN:
         mEnableBackgroundScan = message->arg1() != 0;
         break;
@@ -777,12 +788,10 @@ stateprocess_t WifiStateMachine::invoke_process(int state, Message *message, STA
         break;
     case CMD_RECONNECT:
         doWifiBooleanCommand("RECONNECT");
-        result = SM_HANDLED;
-        break;
+        return SM_HANDLED;
     case CMD_REASSOCIATE:
         doWifiBooleanCommand("REASSOCIATE");
-        result = SM_HANDLED;
-        break;
+        return SM_HANDLED;
     case NETWORK_CONNECTION_EVENT:
         request_wifi(DHCP_DO_REQUEST);
         {
@@ -1015,22 +1024,18 @@ stateprocess_t WifiStateMachine::invoke_process(int state, Message *message, STA
     case CMD_ENABLE_NETWORK:
         setStatus((message->command() != CMD_ENABLE_NETWORK || message->arg2() != 0)
              ? "SELECT_NETWORK %d" : "ENABLE_NETWORK %d", network_id, ConfiguredStation::ENABLED);
-        result = SM_HANDLED;
-        break;
+        return SM_HANDLED;
     case CMD_DISABLE_NETWORK:
         setStatus("DISABLE_NETWORK %d", network_id, ConfiguredStation::DISABLED);
-        result = SM_HANDLED;
-        break;
+        return SM_HANDLED;
     case CMD_REMOVE_NETWORK:
         setStatus("REMOVE_NETWORK %d", network_id, ConfiguredStation::CURRENT);
-        result = SM_HANDLED;
-        break;
+        return SM_HANDLED;
     case CMD_CONNECT_NETWORK: {
         int network_id = message->arg1();
         SLOGV("TODO: WifiStateMachine.Connect_Mode_process(network_id=%d);\n", network_id);
         }
-        result = SM_HANDLED;
-        break;
+        return SM_HANDLED;
     case CMD_START_SUPPLICANT:
         ncommand("softap fwreload %s STA", mInterface.string());
         setInterfaceState(0);
@@ -1043,26 +1048,7 @@ stateprocess_t WifiStateMachine::invoke_process(int state, Message *message, STA
     }
 caseover:;
     if (result == SM_NOT_HANDLED)
-        switch (state) {
-        case SUPPLICANT_STOPPING_STATE:
-            mService->BroadcastState(WS_DISABLING);
-            if (!doWifiBooleanCommand("TERMINATE"))
-                request_wifi(WIFI_STOP_SUPPLICANT);
-            transitionTo(DRIVER_LOADED_STATE);
-            result = SM_HANDLED;
-            break;
-        case DRIVER_FAILED_STATE:
-            result = SM_HANDLED;
-            break;
-        case DRIVER_LOADING_STATE: case DRIVER_LOADED_STATE:
-        case DRIVER_UNLOADING_STATE: case DRIVER_UNLOADED_STATE:
-            result = SM_DEFAULT;
-            break;
-        case DRIVER_STARTING_STATE:
-            break;
-        default:
-            result = process_action(state, message);
-        }
+        result = process_action(state, message);
     if (result == SM_DEFAULT) {
         STATE_TRANSITION *t = state_table[state].tran;
         result = SM_NOT_HANDLED;
