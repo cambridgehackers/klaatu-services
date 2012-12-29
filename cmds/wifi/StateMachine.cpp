@@ -36,12 +36,12 @@ void StateMachine::enqueueDelayed(int command, int delay)
 void StateMachine::transitionTo(int key)
 {
     if (key == CMD_TERMINATE) {
-	mTargetState = 0;
-	return;
+        mTargetState = 0;
+        return;
     }
     mTargetState = key;
     if (!mTargetState)
-	SLOGV("....ERROR: state %d doesn't have a value\n", key);
+        SLOGV("....ERROR: state %d doesn't have a value\n", key);
 }
 
 bool StateMachine::threadLoop()
@@ -53,17 +53,12 @@ bool StateMachine::threadLoop()
     initstates();
     while (!exitPending()) {
         Message *message = NULL;
-	//if (mTargetState != mCurrentState) {
-	    mCurrentState = mTargetState;
-	    while (mDeferedMessages.size() > 0) {
- 	        Message *m = mDeferedMessages[0];
- 		mDeferedMessages.removeAt(0);
-                enqueue(m);
-	    }
-	  //  if (mCurrentState)
-		//SLOGV("......Entering state %s\n", state_table[mCurrentState].name);
-	////}
-	
+        mCurrentState = mTargetState;
+        while (mDeferedMessages.size() > 0) {
+            Message *m = mDeferedMessages[0];
+            mDeferedMessages.removeAt(0);
+            enqueue(m);
+        }
         while (!message) {
             int nfd = xsockets[0] + 1;
             FD_SET(xsockets[0], &readfds);
@@ -88,20 +83,19 @@ bool StateMachine::threadLoop()
             } else if (rv > 0 && extraFd != -1 && FD_ISSET(extraFd, &readfds))
                 extraCb();
         }
-
-	const char *msg_str = msgStr(message->command());
-	switch (invoke_process(mCurrentState, message, state_table)) {
-	case SM_DEFER:
-	    SLOGV(".......Message %s (%d) is being defered by current state\n", msg_str, message->command());
-	    mDeferedMessages.push(message);
-	    break;
-	default:
-	    SLOGV("Warning!  Message %s (%d) not handled by current state %s\n", 
-		   msg_str, message->command(), state_table[mCurrentState].name);
-	case SM_HANDLED:
-	    delete message;
-	    break;
-	}
+        const char *msg_str = msgStr(message->command());
+        switch (invoke_process(mCurrentState, message, state_table)) {
+        case SM_DEFER:
+            SLOGV(".......Message %s (%d) is being defered by current state\n", msg_str, message->command());
+            mDeferedMessages.push(message);
+            break;
+        default:
+            SLOGV("Warning!  Message %s (%d) not handled by current state %s\n", 
+                   msg_str, message->command(), state_table[mCurrentState].name);
+        case SM_HANDLED:
+            delete message;
+            break;
+        }
     }
     return false;
 }

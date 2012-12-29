@@ -83,7 +83,6 @@ String8 WifiStateMachine::ncommand(const char *fmt, ...)
     vsnprintf(p, sizeof(buf) - (p - buf), fmt, args);
     va_end(args);
 
-    //String8 message = String8::format("%d %s", seqno, buf);
     SLOGV(".....Netd:          '%s'\n", buf);
     int len = ::write(mFd, buf, strlen(buf) + 1);
     if (len < 0) {
