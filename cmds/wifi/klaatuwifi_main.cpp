@@ -214,41 +214,14 @@ status_t BnWifiService::onTransact( uint32_t code, const Parcel& data, Parcel* r
 
 };  // namespace android
 
-void usage()
-{
-    printf("wifi - Presents a binder interface to Wifi\n"
-	   "\n"
-	);
-    exit(0);
-}
-
 using namespace android;
 
 int main(int argc, char **argv)
 {
-    if (argc > 1)
-	usage();
-
-#if 0
-    // The instantiate function from BinderService.h conflicts with the Singleton function
-    // WifiService::instantiate();
-    // So we need to do the "publishAndJoinThreadPool()" function by hand
-
-    sp<ProcessState> proc(ProcessState::self());
-
-    sp<IServiceManager> sm(defaultServiceManager());
-    sm->addService(String16("wifi"), new WifiService());
-    ProcessState::self()->startThreadPool();
-    /* Add the calling thread to the IPC thread pool. This function does not return until exit. */
-    IPCThreadState::self()->joinThreadPool();
-#endif
+    if (argc > 1) {
+        printf("wifi - Presents a binder interface to Wifi\n\n");
+        exit(0);
+    }
     WifiService::publishAndJoinThreadPool();
-#if 0 ////////////
-        sp<IServiceManager> sm(defaultServiceManager());
-        sm->addService(String16(SERVICE::getServiceName()), new SERVICE(), allowIsolated);
-        ProcessState::self()->startThreadPool();
-        IPCThreadState::self()->joinThreadPool();
-    SensorService::publishAndJoinThreadPool();
-#endif
     return 0;
 }
