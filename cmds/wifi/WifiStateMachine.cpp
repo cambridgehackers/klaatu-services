@@ -549,7 +549,6 @@ WifiStateMachine::WifiStateMachine(const char *interface, WifiService *servicep)
     }
     request_wifi(DHCP_STOP);
     request_wifi(WIFI_STOP_SUPPLICANT);
-    ADD_ITEMS(mStateMap);
     if (request_wifi(WIFI_IS_DRIVER_LOADED))
         transitionTo(DRIVER_LOADED_STATE);
     else
@@ -720,7 +719,6 @@ stateprocess_t WifiStateMachine::process_action(int state, Message *message)
 }
 stateprocess_t WifiStateMachine::invoke_process(int state, Message *message, STATE_TABLE_TYPE *state_table)
 {
-    typedef stateprocess_t (WifiStateMachineActions::*WPROCESS_PROTO)(Message *);
     stateprocess_t result = SM_NOT_HANDLED;
     int network_id = message->arg1();
 
@@ -1045,11 +1043,7 @@ stateprocess_t WifiStateMachine::invoke_process(int state, Message *message, STA
         break;
     }
 caseover:;
-    PROCESS_PROTO fn = mStateMap[state].mProcess;
     if (result == SM_NOT_HANDLED)
-#if 0
-        result = (static_cast<WifiStateMachineActions *>(this)->*static_cast<WPROCESS_PROTO>(fn))(message);
-#else
         switch (state) {
         case SUPPLICANT_STOPPING_STATE:
             mService->BroadcastState(WS_DISABLING);
@@ -1070,7 +1064,6 @@ caseover:;
         default:
             result = process_action(state, message);
         }
-#endif
     if (result == SM_DEFAULT) {
         STATE_TRANSITION *t = state_table[state].tran;
         result = SM_NOT_HANDLED;

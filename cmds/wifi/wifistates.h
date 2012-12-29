@@ -134,35 +134,4 @@ void initstates(void)
 }
 
 #endif
-
-#ifdef FSM_ACTION_CODE
-#define addstateitem(command) \
-    mStateMap[command].mName = #command; 
-class WifiStateMachineActions: public WifiStateMachine {
-public:
-};
-void ADD_ITEMS(State *mStateMap) {
-    addstateitem(CONNECTED_STATE);
-    addstateitem(CONNECTING_STATE);
-    addstateitem(DEFER_STATE);
-    addstateitem(DISCONNECTED_STATE);
-    addstateitem(DISCONNECTING_STATE);
-    addstateitem(DRIVER_FAILED_STATE);
-    addstateitem(DRIVER_LOADED_STATE);
-    addstateitem(DRIVER_LOADING_STATE);
-    addstateitem(DRIVER_STARTED_STATE);
-    addstateitem(DRIVER_STARTING_STATE);
-    addstateitem(DRIVER_STOPPED_STATE);
-    addstateitem(DRIVER_STOPPING_STATE);
-    addstateitem(DRIVER_UNLOADED_STATE);
-    addstateitem(DRIVER_UNLOADING_STATE);
-    addstateitem(INITIAL_STATE);
-    addstateitem(SCAN_MODE_STATE);
-    addstateitem(SUPPLICANT_STARTING_STATE);
-    addstateitem(SUPPLICANT_STOPPING_STATE);
-    addstateitem(UNUSED_STATE);
-    addstateitem(DEFAULT_STATE);
-}
-
-#endif
 } /* namespace android */

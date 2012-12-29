@@ -38,12 +38,6 @@ private:
 };
 
 enum stateprocess_t { SM_DEFAULT, SM_HANDLED, SM_NOT_HANDLED, SM_DEFER };
-typedef stateprocess_t (StateMachine::*PROCESS_PROTO)(Message *);
-class State {
-public:
-    PROCESS_PROTO    mProcess;
-    const char *     mName;
-};
 
 class StateMachine : public Thread {
 public:
@@ -54,7 +48,6 @@ public:
     void enqueue(Message *);
     void enqueue(int command) { enqueue(new Message(command)); }
     void enqueueDelayed(int command, int delay);
-    State * mStateMap;
     virtual stateprocess_t invoke_process(int, Message *, STATE_TABLE_TYPE *) = 0;
 protected:
     virtual const char *msgStr(int msg_id) { return ""; }

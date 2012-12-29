@@ -14,7 +14,6 @@ namespace android {
 StateMachine::StateMachine() : mCurrentState(0), mTargetState(0)
 {
     extraFd = -1;
-    mStateMap = (State *)malloc(STATE_MAX * sizeof(State));
     if (socketpair(AF_UNIX, SOCK_STREAM, 0, xsockets) < 0) {
         SLOGV("opening stream socket pair\n");
         exit(1);
