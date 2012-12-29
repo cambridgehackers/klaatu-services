@@ -705,7 +705,6 @@ stateprocess_t WifiStateMachineActions::Scan_Mode_process(Message *message)
     return Driver_Started_process(message);
 }
 
-//stateprocess_t WifiStateMachineActions::Connect_Mode_process(Message *message)
 stateprocess_t WifiStateMachineActions::Connecting_process(Message *message)
 {
     switch (message->command()) {
@@ -741,12 +740,6 @@ stateprocess_t WifiStateMachineActions::Connecting_process(Message *message)
     }
     return SM_DEFAULT;
 }
-#if 0
-stateprocess_t WifiStateMachineActions::Connecting_process(Message *message)
-{
-    return Connect_Mode_process(message);
-}
-#endif
 
 stateprocess_t WifiStateMachineActions::Connected_process(Message *message)
 {
@@ -767,11 +760,6 @@ stateprocess_t WifiStateMachineActions::Connected_process(Message *message)
         if (mScanResultIsPending)
             doWifiBooleanCommand("AP_SCAN 1");  // CONNECT_MODE
         break;
-#if 0
-    }
-    return SM_DEFAULT;
-    switch (message->command()) {
-#endif
     case NETWORK_DISCONNECTION_EVENT:
         disable_interface();
         if (mEnableBackgroundScan && !mScanResultIsPending)
@@ -780,20 +768,6 @@ stateprocess_t WifiStateMachineActions::Connected_process(Message *message)
     case CMD_STOP_SUPPLICANT:
         disable_interface();
         break;
-#if 0
-    case SUP_STATE_CHANGE_EVENT:
-        if (mEnableBackgroundScan && !mScanResultIsPending)
-            doWifiBooleanCommand("DRIVER BGSCAN-START");
-        return SM_HANDLED;
-    case CMD_DISCONNECT:
-        return SM_HANDLED;
-    case SUP_SCAN_RESULTS_EVENT:    // Go back to "connect" mode
-        doWifiBooleanCommand("AP_SCAN 1");  // CONNECT_MODE
-        return SM_HANDLED;
-    case CMD_START_SCAN:
-        start_scan(message->arg1() != 0);
-        return SM_HANDLED;
-#endif
     case SUP_DISCONNECTION_EVENT:
         if (++mSupplicantRestartCount <= 5)
             restartSupplicant(this);
@@ -824,11 +798,6 @@ stateprocess_t WifiStateMachineActions::Disconnected_process(Message *message)
         if (mEnableBackgroundScan && mScanResultIsPending)
             doWifiBooleanCommand("DRIVER BGSCAN-START");
         break;
-#if 0
-    }
-    return SM_NOT_HANDLED;
-    switch (message->command()) {
-#endif
     case NETWORK_DISCONNECTION_EVENT:
         if (mEnableBackgroundScan && !mScanResultIsPending)
             doWifiBooleanCommand("DRIVER BGSCAN-START");
@@ -842,14 +811,6 @@ stateprocess_t WifiStateMachineActions::Disconnected_process(Message *message)
     case CMD_STOP_SUPPLICANT:
         disable_interface();
         break;
-#if 0
-    case SUP_SCAN_RESULTS_EVENT:    // Go back to "connect" mode
-        doWifiBooleanCommand("AP_SCAN 1");  // CONNECT_MODE
-        return SM_HANDLED;
-    case CMD_START_SCAN:
-        start_scan(message->arg1() != 0);
-        return SM_HANDLED;
-#endif
     case SUP_DISCONNECTION_EVENT:
         if (++mSupplicantRestartCount <= 5)
             restartSupplicant(this);
@@ -900,11 +861,6 @@ stateprocess_t WifiStateMachineActions::Driver_Stopping_process(Message *message
 
 stateprocess_t WifiStateMachineActions::Disconnecting_process(Message *message)
 {
-#if 0
-    if (message->command() == SUP_STATE_CHANGE_EVENT)
-        disable_interface();
-    return SM_DEFAULT;
-#endif
     switch (message->command()) {
     case NETWORK_DISCONNECTION_EVENT:
         if (mEnableBackgroundScan && !mScanResultIsPending)
@@ -1274,14 +1230,8 @@ stateprocess_t WifiStateMachine::invoke_process(int state, Message *message, STA
         break;
     }
 caseover:;
-    int first = 1;
-    if (state && result == SM_NOT_HANDLED) {
-        PROCESS_PROTO fn = mStateMap[state].mProcess;
-        if (!first)
-            SLOGV("......Processing message %s (%d) in state %s\n", msgStr(message->command()),
-                message->command(), state_table[state].name);
-        first = 0;
-        if (fn) {
+    PROCESS_PROTO fn = mStateMap[state].mProcess;
+    if (result == SM_NOT_HANDLED && fn) {
             result = (static_cast<WifiStateMachineActions *>(this)->*static_cast<WPROCESS_PROTO>(fn))(message);
             if (result == SM_DEFAULT) {
                 STATE_TRANSITION *t = state_table[state].tran;
@@ -1311,10 +1261,6 @@ caseover:;
                     t++;
                 }
             }
-        }
-#if 0
-    //    state = mStateMap[state].mParent;
-#endif
     }
     if (result == SM_NOT_HANDLED) {
         switch (message->command()) {

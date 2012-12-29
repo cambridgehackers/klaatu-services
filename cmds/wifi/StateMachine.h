@@ -42,7 +42,6 @@ typedef stateprocess_t (StateMachine::*PROCESS_PROTO)(Message *);
 class State {
 public:
     PROCESS_PROTO    mProcess;
-    int              mParent;
     const char *     mName;
 };
 

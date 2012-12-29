@@ -126,7 +126,6 @@ void initstates(void)
 #ifdef FSM_ACTION_CODE
 #define addstateitem(command, aprocess, parent) \
     mStateMap[command].mName = #command; \
-    mStateMap[command].mParent = parent; \
     mStateMap[command].mProcess = aprocess;
 
 class WifiStateMachineActions: public WifiStateMachine {
