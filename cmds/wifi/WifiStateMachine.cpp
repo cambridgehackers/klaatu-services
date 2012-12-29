@@ -124,6 +124,10 @@ bool WifiStateMachine::process_indication()
     return false;
 }
 
+static const char *neweventname[] = {"CTRL_EVENT_LINK_SPEED", "CTRL_EVENT_DRIVER_STATE",
+        "CTRL_EVENT_EAP_FAILURE", "CTRL_EVENT_BSS_ADDED", "CTRL_EVENT_BSS_REMOVED",
+        "KEY_COMPLETED_EVENT", "ASSOCIATED_WITH_EVENT", "WPS_AP_AVAILABLE_EVENT",
+        "NETWORK_RECONNECTION_EVENT"};
 int WifiStateMachine::request_wifi(int request)
 {
     static const char *reqname[] = {"",
@@ -132,13 +136,16 @@ int WifiStateMachine::request_wifi(int request)
         "WIFI_CONNECT_SUPPLICANT", "WIFI_CLOSE_SUPPLICANT", "WIFI_WAIT_EVENT",
         "DHCP_STOP", "DHCP_DO_REQUEST"};
     enum {CTRL_EVENT_LINK_SPEED = 100, CTRL_EVENT_DRIVER_STATE,
-        CTRL_EVENT_EAP_FAILURE, CTRL_EVENT_BSS_ADDED, CTRL_EVENT_BSS_REMOVED};
+        CTRL_EVENT_EAP_FAILURE, CTRL_EVENT_BSS_ADDED, CTRL_EVENT_BSS_REMOVED,
+        KEY_COMPLETED_EVENT, ASSOCIATED_WITH_EVENT, WPS_AP_AVAILABLE_EVENT,
+        NETWORK_RECONNECTION_EVENT};
     static struct {
         const char *name;
         int event;
     } event_map[] = {
         // We make a LOT of assumptions about the CONNECTED format
         {"CTRL-EVENT-CONNECTED - Connection to ", NETWORK_CONNECTION_EVENT},
+        {"CTRL-EVENT-CONNECTED - connection to ", NETWORK_RECONNECTION_EVENT},
         {"CTRL-EVENT-DISCONNECTED ", NETWORK_DISCONNECTION_EVENT},
         {"CTRL-EVENT-STATE-CHANGE ", SUP_STATE_CHANGE_EVENT},
         {"CTRL-EVENT-SCAN-RESULTS ", SUP_SCAN_RESULTS_EVENT},
@@ -148,6 +155,9 @@ int WifiStateMachine::request_wifi(int request)
         {"CTRL-EVENT-EAP-FAILURE ", CTRL_EVENT_EAP_FAILURE},
         {"CTRL-EVENT-BSS-ADDED ", CTRL_EVENT_BSS_ADDED},
         {"CTRL-EVENT-BSS-REMOVED ", CTRL_EVENT_BSS_REMOVED},
+        {"WPA: Key negotiation completed with ", KEY_COMPLETED_EVENT},
+        {"Associated with ", ASSOCIATED_WITH_EVENT},
+        {"WPS-AP-AVAILABLE", WPS_AP_AVAILABLE_EVENT},
         {"WPA:", AUTHENTICATION_FAILURE_EVENT}, {NULL, 0} };
     int ret = 0;
     char rbuf[BUF_SIZE];  // Will store a UTF string
@@ -165,6 +175,7 @@ int WifiStateMachine::request_wifi(int request)
 
         int result = ::dhcp_do_request(mInterface.string(), ipaddr, gateway,
             &prefixLength, dns1, dns2, server, &lease, vendorInfo);
+        SLOGD("......dhcp_do_request: result %d\n", result);
         if (result)
             enqueue(DHCP_FAILURE);
         else
@@ -207,7 +218,7 @@ int WifiStateMachine::request_wifi(int request)
                     break;
                 event++;
                 if (!event_map[event].name) {
-                    SLOGV(".....Unprocessed supplicant event: %s\n", buf);
+                    SLOGV(".....Unknown supplicant event: %s\n", buf);
                     return 0;
                 }
             }
@@ -318,7 +329,7 @@ bool WifiStateMachine::doWifiBooleanCommand(const char *fmt, ...)
     va_end(args);
     bool ret = (!strcmp(result, "OK"));
     if (!ret)
-        SLOGI(".....doWifiBooleanCommand:: '%s' failed\n", result.string());
+        SLOGI(".....doWifiBooleanCommand:: '%s' failed '%s'\n", fmt, result.string());
     return ret;
 }
 
@@ -424,7 +435,7 @@ void WifiStateMachine::setInterfaceState(int astate)
         ifcfg.ipaddr.string(), ifcfg.prefixLength, ifcfg.flags.string());
     code = extractCode(data.string());
     if (!(code >= 200))
-        SLOGW("WifiStateMachine::setInterfaceState(): Unable to set interface %s\n", 
+        SLOGW("......setInterfaceState(): Unable to set interface %s\n", 
              mInterface.string());
 }
 
@@ -440,7 +451,7 @@ int WifiStateMachine::findIndexByNetworkId(int network_id)
     for (size_t i = 0 ; i < mStationsConfig.size() ; i++)
         if (mStationsConfig[i].network_id == network_id)
             return i;
-    SLOGW("WifiStateMachine::findIndexByNetworkId: network %d doesn't exist\n", network_id);
+    SLOGW("......findIndexByNetworkId: network %d doesn't exist\n", network_id);
     return -1;
 }
 
@@ -599,6 +610,8 @@ void WifiStateMachine::handleSupplicantStateChange(Message *message)
 
 const char * WifiStateMachine::msgStr(int msg_id)
 {
+    if (msg_id > 100)
+        return neweventname[msg_id-100];
     return sMessageToString[msg_id];
 }
 
@@ -692,10 +705,12 @@ stateprocess_t WifiStateMachineActions::Scan_Mode_process(Message *message)
     return Driver_Started_process(message);
 }
 
-stateprocess_t WifiStateMachineActions::Connect_Mode_process(Message *message)
+//stateprocess_t WifiStateMachineActions::Connect_Mode_process(Message *message)
+stateprocess_t WifiStateMachineActions::Connecting_process(Message *message)
 {
     switch (message->command()) {
     case NETWORK_DISCONNECTION_EVENT:
+        disable_interface();
         if (mEnableBackgroundScan && !mScanResultIsPending)
             doWifiBooleanCommand("DRIVER BGSCAN-START");
         break;
@@ -705,6 +720,9 @@ stateprocess_t WifiStateMachineActions::Connect_Mode_process(Message *message)
         return SM_HANDLED;
     case CMD_DISCONNECT:
         return SM_HANDLED;
+    case CMD_STOP_SUPPLICANT:
+        disable_interface();
+        break;
     case SUP_SCAN_RESULTS_EVENT:    // Go back to "connect" mode
         doWifiBooleanCommand("AP_SCAN 1");  // CONNECT_MODE
         return SM_HANDLED;
@@ -723,6 +741,12 @@ stateprocess_t WifiStateMachineActions::Connect_Mode_process(Message *message)
     }
     return SM_DEFAULT;
 }
+#if 0
+stateprocess_t WifiStateMachineActions::Connecting_process(Message *message)
+{
+    return Connect_Mode_process(message);
+}
+#endif
 
 stateprocess_t WifiStateMachineActions::Connected_process(Message *message)
 {
@@ -742,6 +766,42 @@ stateprocess_t WifiStateMachineActions::Connected_process(Message *message)
     case CMD_DISCONNECT:
         if (mScanResultIsPending)
             doWifiBooleanCommand("AP_SCAN 1");  // CONNECT_MODE
+        break;
+#if 0
+    }
+    return SM_DEFAULT;
+    switch (message->command()) {
+#endif
+    case NETWORK_DISCONNECTION_EVENT:
+        disable_interface();
+        if (mEnableBackgroundScan && !mScanResultIsPending)
+            doWifiBooleanCommand("DRIVER BGSCAN-START");
+        break;
+    case CMD_STOP_SUPPLICANT:
+        disable_interface();
+        break;
+#if 0
+    case SUP_STATE_CHANGE_EVENT:
+        if (mEnableBackgroundScan && !mScanResultIsPending)
+            doWifiBooleanCommand("DRIVER BGSCAN-START");
+        return SM_HANDLED;
+    case CMD_DISCONNECT:
+        return SM_HANDLED;
+    case SUP_SCAN_RESULTS_EVENT:    // Go back to "connect" mode
+        doWifiBooleanCommand("AP_SCAN 1");  // CONNECT_MODE
+        return SM_HANDLED;
+    case CMD_START_SCAN:
+        start_scan(message->arg1() != 0);
+        return SM_HANDLED;
+#endif
+    case SUP_DISCONNECTION_EVENT:
+        if (++mSupplicantRestartCount <= 5)
+            restartSupplicant(this);
+        else {
+            SLOGD("Failed to start supplicant; unloading driver\n");
+            mSupplicantRestartCount = 0;
+            enqueue(CMD_UNLOAD_DRIVER);
+        }
         break;
     }
     return SM_DEFAULT;
@@ -764,8 +824,43 @@ stateprocess_t WifiStateMachineActions::Disconnected_process(Message *message)
         if (mEnableBackgroundScan && mScanResultIsPending)
             doWifiBooleanCommand("DRIVER BGSCAN-START");
         break;
+#if 0
     }
     return SM_NOT_HANDLED;
+    switch (message->command()) {
+#endif
+    case NETWORK_DISCONNECTION_EVENT:
+        if (mEnableBackgroundScan && !mScanResultIsPending)
+            doWifiBooleanCommand("DRIVER BGSCAN-START");
+        break;
+    case SUP_STATE_CHANGE_EVENT:
+        if (mEnableBackgroundScan && !mScanResultIsPending)
+            doWifiBooleanCommand("DRIVER BGSCAN-START");
+        return SM_HANDLED;
+    case CMD_DISCONNECT:
+        return SM_HANDLED;
+    case CMD_STOP_SUPPLICANT:
+        disable_interface();
+        break;
+#if 0
+    case SUP_SCAN_RESULTS_EVENT:    // Go back to "connect" mode
+        doWifiBooleanCommand("AP_SCAN 1");  // CONNECT_MODE
+        return SM_HANDLED;
+    case CMD_START_SCAN:
+        start_scan(message->arg1() != 0);
+        return SM_HANDLED;
+#endif
+    case SUP_DISCONNECTION_EVENT:
+        if (++mSupplicantRestartCount <= 5)
+            restartSupplicant(this);
+        else {
+            SLOGD("Failed to start supplicant; unloading driver\n");
+            mSupplicantRestartCount = 0;
+            enqueue(CMD_UNLOAD_DRIVER);
+        }
+        break;
+    }
+    return SM_DEFAULT;
 }
 
 stateprocess_t WifiStateMachineActions::Supplicant_Stopping_process(Message *message)
@@ -805,8 +900,39 @@ stateprocess_t WifiStateMachineActions::Driver_Stopping_process(Message *message
 
 stateprocess_t WifiStateMachineActions::Disconnecting_process(Message *message)
 {
+#if 0
     if (message->command() == SUP_STATE_CHANGE_EVENT)
         disable_interface();
+    return SM_DEFAULT;
+#endif
+    switch (message->command()) {
+    case NETWORK_DISCONNECTION_EVENT:
+        if (mEnableBackgroundScan && !mScanResultIsPending)
+            doWifiBooleanCommand("DRIVER BGSCAN-START");
+        break;
+    case SUP_STATE_CHANGE_EVENT:
+        disable_interface();
+        //if (mEnableBackgroundScan && !mScanResultIsPending)
+            //doWifiBooleanCommand("DRIVER BGSCAN-START");
+        break; //return SM_HANDLED;
+    case CMD_DISCONNECT:
+        return SM_HANDLED;
+    case SUP_SCAN_RESULTS_EVENT:    // Go back to "connect" mode
+        doWifiBooleanCommand("AP_SCAN 1");  // CONNECT_MODE
+        return SM_HANDLED;
+    case CMD_START_SCAN:
+        start_scan(message->arg1() != 0);
+        return SM_HANDLED;
+    case SUP_DISCONNECTION_EVENT:
+        if (++mSupplicantRestartCount <= 5)
+            restartSupplicant(this);
+        else {
+            SLOGD("Failed to start supplicant; unloading driver\n");
+            mSupplicantRestartCount = 0;
+            enqueue(CMD_UNLOAD_DRIVER);
+        }
+        break;
+    }
     return SM_DEFAULT;
 }
 
@@ -826,7 +952,7 @@ stateprocess_t WifiStateMachine::invoke_process(int state, Message *message, STA
     stateprocess_t result = SM_NOT_HANDLED;
     int network_id = message->arg1();
 
-    SLOGV("......Start processing message %s (%d) in state %s\n", msgStr(message->command()),
+    SLOGV("....Start processing message %s (%d) in state %s\n", msgStr(message->command()),
         message->command(), state_table[state].name);
     switch (message->command()) {
     case AUTHENTICATION_FAILURE_EVENT:
@@ -874,9 +1000,6 @@ stateprocess_t WifiStateMachine::invoke_process(int state, Message *message, STA
     case CMD_ENABLE_BACKGROUND_SCAN:
         mEnableBackgroundScan = message->arg1() != 0;
         break;
-    case NETWORK_DISCONNECTION_EVENT:
-        disable_interface();
-        break;
     case SUP_STATE_CHANGE_EVENT:
         handleSupplicantStateChange(message);
         break;
@@ -891,8 +1014,10 @@ stateprocess_t WifiStateMachine::invoke_process(int state, Message *message, STA
         doWifiBooleanCommand("REASSOCIATE");
         result = SM_HANDLED;
         break;
-    case NETWORK_CONNECTION_EVENT: {
+    case NETWORK_CONNECTION_EVENT:
         request_wifi(DHCP_DO_REQUEST);
+        SLOGV("....after DHCP_DO_REQUEST\n");
+        {
         Mutex::Autolock _l(mReadLock);
         mWifiInformation.bssid = message->string();
         mWifiInformation.network_id = message->arg1();
@@ -911,7 +1036,7 @@ stateprocess_t WifiStateMachine::invoke_process(int state, Message *message, STA
                 if (cs.status == ConfiguredStation::ENABLED)
                     cs.status = ConfiguredStation::CURRENT;
                 else
-                    SLOGI("WifiStateMachine::networkConnect to disabled station\n");
+                    SLOGI("......networkConnect to disabled station\n");
                 break;
             }
         }
@@ -1014,7 +1139,7 @@ stateprocess_t WifiStateMachine::invoke_process(int state, Message *message, STA
         for (size_t i = 1 ; i < lines.size() ; i++) {
             Vector<String8> elements = splitString(lines[i], '\t');
             if (elements.size() < 3 || elements.size() > 5)
-                SLOGW("WifiStateMachine::handleScanResults() Illegal data: %s\n", lines[i].string());
+                SLOGW("......handleScanResults() Illegal data: %s\n", lines[i].string());
             else {
                 int frequency = atoi(elements[1].string());
                 int rssi      = atoi(elements[2].string());
@@ -1047,7 +1172,7 @@ stateprocess_t WifiStateMachine::invoke_process(int state, Message *message, STA
         const ConfiguredStation& cs = static_cast<AddOrUpdateNetworkMessage *>(message)->mConfig;
         int index = -1;
         network_id = cs.network_id;
-        SLOGD("WifiStateMachine::addOrUpdate id=%d ssid=%s\n", network_id, cs.ssid.string());
+        SLOGD("......addOrUpdate id=%d ssid=%s\n", network_id, cs.ssid.string());
         if (network_id != -1) {   // It's an update!
             index = findIndexByNetworkId(network_id);
             if (index < 0)
@@ -1055,14 +1180,14 @@ stateprocess_t WifiStateMachine::invoke_process(int state, Message *message, STA
         } else {   // Adding a new station
             for (size_t i = 0 ; i < mStationsConfig.size() ; i++) {
                 if (mStationsConfig[i].ssid == cs.ssid) {
-                    SLOGW("WifiStateMachine::addOrUpdate: Attempting to add ssid=%s"
+                    SLOGW("......addOrUpdate: Attempting to add ssid=%s"
                     " but that station already exists\n", cs.ssid.string());
                     goto caseover;
                 }
             }
             String8 s = doWifiStringCommand("ADD_NETWORK");
             if (s.isEmpty() || !isdigit(s.string()[0])) {
-                SLOGW("WifiStateMachine::addOrUpdate: Failed to add a network [%s]\n", s.string());
+                SLOGW("......addOrUpdate: Failed to add a network [%s]\n", s.string());
                 break;
             }
             network_id = atoi(s.string());
@@ -1150,7 +1275,7 @@ stateprocess_t WifiStateMachine::invoke_process(int state, Message *message, STA
     }
 caseover:;
     int first = 1;
-    while (state && result == SM_NOT_HANDLED) {
+    if (state && result == SM_NOT_HANDLED) {
         PROCESS_PROTO fn = mStateMap[state].mProcess;
         if (!first)
             SLOGV("......Processing message %s (%d) in state %s\n", msgStr(message->command()),
@@ -1165,6 +1290,7 @@ caseover:;
                     if (t->event == message->command()) {
                         result = SM_DEFER;
                         if (t->state != DEFER_STATE) {
+                            SLOGV("......Transition to %s\n", state_table[t->state].name);
                             transitionTo(t->state);
                             result = SM_HANDLED;
                         }
@@ -1177,6 +1303,7 @@ caseover:;
                 STATE_TRANSITION *t = state_table[DEFAULT_STATE].tran;
                 while (t && t->state) {
                     if (t->event == message->command()) {
+                        SLOGV("......DEFAULT transition to %s\n", state_table[t->state].name);
                         transitionTo(t->state);
                         result = SM_HANDLED;
                         break;
@@ -1185,7 +1312,9 @@ caseover:;
                 }
             }
         }
-        state = mStateMap[state].mParent;
+#if 0
+    //    state = mStateMap[state].mParent;
+#endif
     }
     if (result == SM_NOT_HANDLED) {
         switch (message->command()) {

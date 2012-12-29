@@ -97,8 +97,8 @@ bool StateMachine::threadLoop()
 	    mDeferedMessages.push(message);
 	    break;
 	default:
-	    SLOGV("Warning!  Message %s (%d) not handled by current state %x\n", 
-		   msg_str, message->command(), mCurrentState);
+	    SLOGV("Warning!  Message %s (%d) not handled by current state %s\n", 
+		   msg_str, message->command(), state_table[mCurrentState].name);
 	case SM_HANDLED:
 	    delete message;
 	    break;
