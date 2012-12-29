@@ -897,25 +897,25 @@ stateprocess_t WifiStateMachineActions::Driver_Failed_process(Message *m)
     return SM_HANDLED;
 }
 
-stateprocess_t WifiStateMachineActions::sm_default_process(Message *m)
-{
-    return SM_DEFAULT;
-}
 stateprocess_t WifiStateMachineActions::Driver_Loading_process(Message *m)
 {
-    return sm_default_process(m);
+    return SM_DEFAULT;
 }
 stateprocess_t WifiStateMachineActions::Driver_Starting_process(Message *m)
 {
     return SM_NOT_HANDLED;
 }
+stateprocess_t WifiStateMachineActions::Driver_Loaded_process(Message *m)
+{
+    return SM_DEFAULT;
+}
 stateprocess_t WifiStateMachineActions::Driver_Unloaded_process(Message *m)
 {
-    return sm_default_process(m);
+    return SM_DEFAULT;
 }
 stateprocess_t WifiStateMachineActions::Driver_Unloading_process(Message *m)
 {
-    return sm_default_process(m);
+    return SM_DEFAULT;
 }
 stateprocess_t WifiStateMachine::invoke_process(int state, Message *message, STATE_TABLE_TYPE *state_table)
 {
