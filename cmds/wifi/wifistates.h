@@ -136,46 +136,32 @@ void initstates(void)
 #endif
 
 #ifdef FSM_ACTION_CODE
-#define addstateitem(command, aprocess) \
-    mStateMap[command].mName = #command; \
-    mStateMap[command].mProcess = aprocess;
-
+#define addstateitem(command) \
+    mStateMap[command].mName = #command; 
 class WifiStateMachineActions: public WifiStateMachine {
 public:
-stateprocess_t Connected_process(Message *);
-stateprocess_t Connecting_process(Message *);
-stateprocess_t Disconnected_process(Message *);
-stateprocess_t Disconnecting_process(Message *);
-stateprocess_t Driver_Failed_process(Message *);
-stateprocess_t Driver_Loaded_process(Message *);
-stateprocess_t Driver_Loading_process(Message *);
-stateprocess_t Driver_Started_process(Message *);
-stateprocess_t Driver_Starting_process(Message *);
-stateprocess_t Driver_Stopped_process(Message *);
-stateprocess_t Driver_Stopping_process(Message *);
-stateprocess_t Driver_Unloaded_process(Message *);
-stateprocess_t Driver_Unloading_process(Message *);
-stateprocess_t Scan_Mode_process(Message *);
-stateprocess_t Supplicant_Starting_process(Message *);
-stateprocess_t Supplicant_Stopping_process(Message *);
 };
 void ADD_ITEMS(State *mStateMap) {
-    addstateitem(CONNECTED_STATE, 0);
-    addstateitem(CONNECTING_STATE, 0);
-    addstateitem(DISCONNECTED_STATE, 0);
-    addstateitem(DISCONNECTING_STATE, 0);
-    addstateitem(DRIVER_FAILED_STATE, 0);
-    addstateitem(DRIVER_LOADED_STATE, 0);
-    addstateitem(DRIVER_LOADING_STATE, 0);
-    addstateitem(DRIVER_STARTED_STATE, 0);
-    addstateitem(DRIVER_STARTING_STATE, 0);
-    addstateitem(DRIVER_STOPPED_STATE, 0);
-    addstateitem(DRIVER_STOPPING_STATE, 0);
-    addstateitem(DRIVER_UNLOADED_STATE, 0);
-    addstateitem(DRIVER_UNLOADING_STATE, 0);
-    addstateitem(SCAN_MODE_STATE, 0);
-    addstateitem(SUPPLICANT_STARTING_STATE, 0);
-    addstateitem(SUPPLICANT_STOPPING_STATE, 0);
+    addstateitem(CONNECTED_STATE);
+    addstateitem(CONNECTING_STATE);
+    addstateitem(DEFER_STATE);
+    addstateitem(DISCONNECTED_STATE);
+    addstateitem(DISCONNECTING_STATE);
+    addstateitem(DRIVER_FAILED_STATE);
+    addstateitem(DRIVER_LOADED_STATE);
+    addstateitem(DRIVER_LOADING_STATE);
+    addstateitem(DRIVER_STARTED_STATE);
+    addstateitem(DRIVER_STARTING_STATE);
+    addstateitem(DRIVER_STOPPED_STATE);
+    addstateitem(DRIVER_STOPPING_STATE);
+    addstateitem(DRIVER_UNLOADED_STATE);
+    addstateitem(DRIVER_UNLOADING_STATE);
+    addstateitem(INITIAL_STATE);
+    addstateitem(SCAN_MODE_STATE);
+    addstateitem(SUPPLICANT_STARTING_STATE);
+    addstateitem(SUPPLICANT_STOPPING_STATE);
+    addstateitem(UNUSED_STATE);
+    addstateitem(DEFAULT_STATE);
 }
 
 #endif
