@@ -124,10 +124,10 @@ bool WifiStateMachine::process_indication()
     return false;
 }
 
-static const char *neweventname[] = {"CTRL_EVENT_LINK_SPEED", "CTRL_EVENT_DRIVER_STATE",
-        "CTRL_EVENT_EAP_FAILURE", "CTRL_EVENT_BSS_ADDED", "CTRL_EVENT_BSS_REMOVED",
-        "KEY_COMPLETED_EVENT", "ASSOCIATED_WITH_EVENT", "WPS_AP_AVAILABLE_EVENT",
-        "NETWORK_RECONNECTION_EVENT"};
+//static const char *neweventname[] = {"CTRL_EVENT_LINK_SPEED", "CTRL_EVENT_DRIVER_STATE",
+        //"CTRL_EVENT_EAP_FAILURE", "CTRL_EVENT_BSS_ADDED", "CTRL_EVENT_BSS_REMOVED",
+        //"KEY_COMPLETED_EVENT", "ASSOCIATED_WITH_EVENT", "WPS_AP_AVAILABLE_EVENT",
+        //"NETWORK_RECONNECTION_EVENT"};
 int WifiStateMachine::request_wifi(int request)
 {
     static const char *reqname[] = {"",
@@ -135,10 +135,10 @@ int WifiStateMachine::request_wifi(int request)
         "WIFI_START_SUPPLICANT", "WIFI_STOP_SUPPLICANT",
         "WIFI_CONNECT_SUPPLICANT", "WIFI_CLOSE_SUPPLICANT", "WIFI_WAIT_EVENT",
         "DHCP_STOP", "DHCP_DO_REQUEST"};
-    enum {CTRL_EVENT_LINK_SPEED = 100, CTRL_EVENT_DRIVER_STATE,
-        CTRL_EVENT_EAP_FAILURE, CTRL_EVENT_BSS_ADDED, CTRL_EVENT_BSS_REMOVED,
-        KEY_COMPLETED_EVENT, ASSOCIATED_WITH_EVENT, WPS_AP_AVAILABLE_EVENT,
-        NETWORK_RECONNECTION_EVENT};
+    //enum {CTRL_EVENT_LINK_SPEED = 100, CTRL_EVENT_DRIVER_STATE,
+        //CTRL_EVENT_EAP_FAILURE, CTRL_EVENT_BSS_ADDED, CTRL_EVENT_BSS_REMOVED,
+        //KEY_COMPLETED_EVENT, ASSOCIATED_WITH_EVENT, WPS_AP_AVAILABLE_EVENT,
+        //NETWORK_RECONNECTION_EVENT};
     static struct {
         const char *name;
         int event;
@@ -610,8 +610,6 @@ void WifiStateMachine::handleSupplicantStateChange(Message *message)
 
 const char * WifiStateMachine::msgStr(int msg_id)
 {
-    if (msg_id > 100)
-        return neweventname[msg_id-100];
     return sMessageToString[msg_id];
 }
 
