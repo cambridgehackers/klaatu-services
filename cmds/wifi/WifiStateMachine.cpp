@@ -620,10 +620,15 @@ void WifiStateMachine::flushDnsCache()
   running.  This is tied in tightly to the property system, using the
   "init.svc.wpa_supplicant" property to check if it is running.
  */
-stateprocess_t WifiStateMachineActions::Supplicant_Starting_process(Message *message)
+#define STATEEV(STATE, EVENT) ((EVENT) * STATE_MAX + (STATE))
+stateprocess_t WifiStateMachine::process_action(int state, Message *message)
 {
-    switch (message->command()) {
-    case SUP_DISCONNECTION_EVENT:
+    switch (STATEEV(state, message->command())) {
+    case STATEEV(SUPPLICANT_STARTING_STATE, SUP_DISCONNECTION_EVENT):
+    case STATEEV(CONNECTING_STATE, SUP_DISCONNECTION_EVENT):
+    case STATEEV(CONNECTED_STATE, SUP_DISCONNECTION_EVENT):
+    case STATEEV(DISCONNECTED_STATE, SUP_DISCONNECTION_EVENT):
+    case STATEEV(DISCONNECTING_STATE, SUP_DISCONNECTION_EVENT):
         if (++mSupplicantRestartCount <= 5)
             restartSupplicant(this);
         else {
@@ -632,18 +637,19 @@ stateprocess_t WifiStateMachineActions::Supplicant_Starting_process(Message *mes
             enqueue(CMD_UNLOAD_DRIVER);
         }
         break;
-    case SUP_STATE_CHANGE_EVENT:
+    case STATEEV(SUPPLICANT_STARTING_STATE, SUP_STATE_CHANGE_EVENT):
+    case STATEEV(CONNECTING_STATE, SUP_STATE_CHANGE_EVENT):
+    case STATEEV(CONNECTED_STATE, SUP_STATE_CHANGE_EVENT):
+    case STATEEV(DISCONNECTED_STATE, NETWORK_DISCONNECTION_EVENT):
+    case STATEEV(DISCONNECTED_STATE, SUP_STATE_CHANGE_EVENT):
+    case STATEEV(DISCONNECTING_STATE, NETWORK_DISCONNECTION_EVENT):
         if (mEnableBackgroundScan && !mScanResultIsPending)
             doWifiBooleanCommand("DRIVER BGSCAN-START");
         return SM_HANDLED;
-    }
-    return SM_DEFAULT;
-}
-
-stateprocess_t WifiStateMachineActions::Driver_Stopped_process(Message *message)
-{
-    switch (message->command()) {
-    case SUP_DISCONNECTION_EVENT:
+    case STATEEV(DRIVER_STOPPED_STATE, SUP_DISCONNECTION_EVENT):
+    case STATEEV(DRIVER_STARTED_STATE, SUP_DISCONNECTION_EVENT):
+    case STATEEV(SCAN_MODE_STATE, SUP_DISCONNECTION_EVENT):
+    case STATEEV(DRIVER_STOPPING_STATE, SUP_DISCONNECTION_EVENT):
         restartSupplicant(this);
         request_wifi(WIFI_CLOSE_SUPPLICANT);
         // mNetworkInfo.setIsAvailable(false);
@@ -652,243 +658,65 @@ stateprocess_t WifiStateMachineActions::Driver_Stopped_process(Message *message)
         // mSupplicantStateTracker.sendMessage(CMD_RESET_SUPPLICANT_STATE);
         // mWpsStateMachine.sendMessage(CMD_RESET_WPS_STATE);
         break;
-    case CMD_STOP_SUPPLICANT:
+    case STATEEV(DRIVER_STOPPED_STATE, CMD_STOP_SUPPLICANT):
+    case STATEEV(DRIVER_STARTED_STATE, CMD_STOP_SUPPLICANT):
+    case STATEEV(SCAN_MODE_STATE, CMD_STOP_SUPPLICANT):
+    case STATEEV(CONNECTING_STATE, CMD_STOP_SUPPLICANT):
+    case STATEEV(CONNECTED_STATE, CMD_STOP_SUPPLICANT):
+    case STATEEV(DISCONNECTED_STATE, CMD_STOP_SUPPLICANT):
+    case STATEEV(DRIVER_STOPPING_STATE, CMD_STOP_SUPPLICANT):
+    case STATEEV(DISCONNECTING_STATE, SUP_STATE_CHANGE_EVENT):
         disable_interface();
         break;
-    }
-    return SM_DEFAULT;
-}
-
-stateprocess_t WifiStateMachineActions::Driver_Started_process(Message *message)
-{
-    switch (message->command()) {
-    case CMD_START_SCAN:
+    case STATEEV(DRIVER_STARTED_STATE, CMD_START_SCAN):
+    case STATEEV(SCAN_MODE_STATE, CMD_START_SCAN):
         start_scan(message->arg1() != 0);
         if (mEnableBackgroundScan && !mScanResultIsPending)
             doWifiBooleanCommand("DRIVER BGSCAN-START");
         return SM_HANDLED;
-    case SUP_DISCONNECTION_EVENT:
-        restartSupplicant(this);
-        request_wifi(WIFI_CLOSE_SUPPLICANT);
-        // mNetworkInfo.setIsAvailable(false);
-        disable_interface();
-        // sendSupplicantConnectionChangedBroadcast(false);
-        // mSupplicantStateTracker.sendMessage(CMD_RESET_SUPPLICANT_STATE);
-        // mWpsStateMachine.sendMessage(CMD_RESET_WPS_STATE);
-        break;
-    case CMD_STOP_SUPPLICANT:
-        disable_interface();
-        break;
-    }
-    return SM_DEFAULT;
-
-}
-stateprocess_t WifiStateMachineActions::Scan_Mode_process(Message *message)
-{
-    return Driver_Started_process(message);
-}
-
-stateprocess_t WifiStateMachineActions::Connecting_process(Message *message)
-{
-    switch (message->command()) {
-    case NETWORK_DISCONNECTION_EVENT:
+    case STATEEV(CONNECTING_STATE, NETWORK_DISCONNECTION_EVENT):
+    case STATEEV(CONNECTED_STATE, NETWORK_DISCONNECTION_EVENT):
         disable_interface();
         if (mEnableBackgroundScan && !mScanResultIsPending)
             doWifiBooleanCommand("DRIVER BGSCAN-START");
         break;
-    case SUP_STATE_CHANGE_EVENT:
-        if (mEnableBackgroundScan && !mScanResultIsPending)
-            doWifiBooleanCommand("DRIVER BGSCAN-START");
-        return SM_HANDLED;
-    case CMD_STOP_SUPPLICANT:
-        disable_interface();
-        break;
-    case SUP_SCAN_RESULTS_EVENT:    // Go back to "connect" mode
+    case STATEEV(CONNECTING_STATE, SUP_SCAN_RESULTS_EVENT):    // Go back to "connect" mode
+    case STATEEV(CONNECTED_STATE, SUP_SCAN_RESULTS_EVENT):    // Go back to "connect" mode
+    case STATEEV(DISCONNECTING_STATE, SUP_SCAN_RESULTS_EVENT):    // Go back to "connect" mode
         doWifiBooleanCommand("AP_SCAN 1");  // CONNECT_MODE
         return SM_HANDLED;
-    case CMD_START_SCAN:
+    case STATEEV(CONNECTING_STATE, CMD_START_SCAN):
+    case STATEEV(DISCONNECTING_STATE, CMD_START_SCAN):
         start_scan(message->arg1() != 0);
         return SM_HANDLED;
-    case SUP_DISCONNECTION_EVENT:
-        if (++mSupplicantRestartCount <= 5)
-            restartSupplicant(this);
-        else {
-            SLOGD("Failed to start supplicant; unloading driver\n");
-            mSupplicantRestartCount = 0;
-            enqueue(CMD_UNLOAD_DRIVER);
-        }
-        break;
-    }
-    return SM_DEFAULT;
-}
-
-stateprocess_t WifiStateMachineActions::Connected_process(Message *message)
-{
-    switch (message->command()) {
-    case CMD_START_SCAN:
+    case STATEEV(CONNECTED_STATE, CMD_START_SCAN):
         doWifiBooleanCommand("AP_SCAN 2");   // SCAN_ONLY_MODE
         start_scan(message->arg1() != 0);
         return SM_HANDLED;
-    case SUP_STATE_CHANGE_EVENT:
-        if (mEnableBackgroundScan && !mScanResultIsPending)
-            doWifiBooleanCommand("DRIVER BGSCAN-START");
-        return SM_HANDLED;
-    case SUP_SCAN_RESULTS_EVENT:    // Go back to "connect" mode
-        doWifiBooleanCommand("AP_SCAN 1");  // CONNECT_MODE
-        return SM_HANDLED;
-    case DHCP_FAILURE:
-    case CMD_DISCONNECT:
+    case STATEEV(CONNECTED_STATE, DHCP_FAILURE):
+    case STATEEV(CONNECTED_STATE, CMD_DISCONNECT):
         if (mScanResultIsPending)
             doWifiBooleanCommand("AP_SCAN 1");  // CONNECT_MODE
         break;
-    case NETWORK_DISCONNECTION_EVENT:
-        disable_interface();
-        if (mEnableBackgroundScan && !mScanResultIsPending)
-            doWifiBooleanCommand("DRIVER BGSCAN-START");
-        break;
-    case CMD_STOP_SUPPLICANT:
-        disable_interface();
-        break;
-    case SUP_DISCONNECTION_EVENT:
-        if (++mSupplicantRestartCount <= 5)
-            restartSupplicant(this);
-        else {
-            SLOGD("Failed to start supplicant; unloading driver\n");
-            mSupplicantRestartCount = 0;
-            enqueue(CMD_UNLOAD_DRIVER);
-        }
-        break;
-    }
-    return SM_DEFAULT;
-}
-
-stateprocess_t WifiStateMachineActions::Disconnected_process(Message *message)
-{
-    switch (message->command()) {
-    case CMD_START_SCAN:
+    case STATEEV(DISCONNECTED_STATE, CMD_START_SCAN):
         /* Disable background scan temporarily during a regular scan */
         if (mEnableBackgroundScan)
             doWifiBooleanCommand("DRIVER BGSCAN-STOP");
         start_scan(message->arg1() != 0);
         return SM_HANDLED;
-    case CMD_ENABLE_BACKGROUND_SCAN:
+    case STATEEV(DISCONNECTED_STATE, CMD_ENABLE_BACKGROUND_SCAN):
         doWifiBooleanCommand(mEnableBackgroundScan ? "DRIVER BGSCAN-START" : "DRIVER BGSCAN-STOP");
         return SM_HANDLED;
-    case SUP_SCAN_RESULTS_EVENT:
+    case STATEEV(DISCONNECTED_STATE, SUP_SCAN_RESULTS_EVENT):
         /* Re-enable background scan when a pending scan result is received */
         if (mEnableBackgroundScan && mScanResultIsPending)
             doWifiBooleanCommand("DRIVER BGSCAN-START");
         break;
-    case NETWORK_DISCONNECTION_EVENT:
-        if (mEnableBackgroundScan && !mScanResultIsPending)
-            doWifiBooleanCommand("DRIVER BGSCAN-START");
-        break;
-    case SUP_STATE_CHANGE_EVENT:
-        if (mEnableBackgroundScan && !mScanResultIsPending)
-            doWifiBooleanCommand("DRIVER BGSCAN-START");
+    case STATEEV(DISCONNECTED_STATE, CMD_DISCONNECT):
+    case STATEEV(DISCONNECTING_STATE, CMD_DISCONNECT):
         return SM_HANDLED;
-    case CMD_DISCONNECT:
-        return SM_HANDLED;
-    case CMD_STOP_SUPPLICANT:
-        disable_interface();
-        break;
-    case SUP_DISCONNECTION_EVENT:
-        if (++mSupplicantRestartCount <= 5)
-            restartSupplicant(this);
-        else {
-            SLOGD("Failed to start supplicant; unloading driver\n");
-            mSupplicantRestartCount = 0;
-            enqueue(CMD_UNLOAD_DRIVER);
-        }
-        break;
     }
     return SM_DEFAULT;
-}
-
-stateprocess_t WifiStateMachineActions::Supplicant_Stopping_process(Message *message)
-{
-    mService->BroadcastState(WS_DISABLING);
-    if (!doWifiBooleanCommand("TERMINATE"))
-        request_wifi(WIFI_STOP_SUPPLICANT);
-    transitionTo(DRIVER_LOADED_STATE);
-    return SM_HANDLED;
-}
-
-stateprocess_t WifiStateMachineActions::Driver_Stopping_process(Message *message)
-{
-    switch (message->command()) {
-    case SUP_DISCONNECTION_EVENT:
-        restartSupplicant(this);
-        request_wifi(WIFI_CLOSE_SUPPLICANT);
-        // mNetworkInfo.setIsAvailable(false);
-        disable_interface();
-        // sendSupplicantConnectionChangedBroadcast(false);
-        // mSupplicantStateTracker.sendMessage(CMD_RESET_SUPPLICANT_STATE);
-        // mWpsStateMachine.sendMessage(CMD_RESET_WPS_STATE);
-        break;
-    case CMD_STOP_SUPPLICANT:
-        disable_interface();
-        break;
-    }
-    return SM_DEFAULT;
-
-}
-
-stateprocess_t WifiStateMachineActions::Disconnecting_process(Message *message)
-{
-    switch (message->command()) {
-    case NETWORK_DISCONNECTION_EVENT:
-        if (mEnableBackgroundScan && !mScanResultIsPending)
-            doWifiBooleanCommand("DRIVER BGSCAN-START");
-        break;
-    case SUP_STATE_CHANGE_EVENT:
-        disable_interface();
-        break;
-    case CMD_DISCONNECT:
-        return SM_HANDLED;
-    case SUP_SCAN_RESULTS_EVENT:    // Go back to "connect" mode
-        doWifiBooleanCommand("AP_SCAN 1");  // CONNECT_MODE
-        return SM_HANDLED;
-    case CMD_START_SCAN:
-        start_scan(message->arg1() != 0);
-        return SM_HANDLED;
-    case SUP_DISCONNECTION_EVENT:
-        if (++mSupplicantRestartCount <= 5)
-            restartSupplicant(this);
-        else {
-            SLOGD("Failed to start supplicant; unloading driver\n");
-            mSupplicantRestartCount = 0;
-            enqueue(CMD_UNLOAD_DRIVER);
-        }
-        break;
-    }
-    return SM_DEFAULT;
-}
-
-stateprocess_t WifiStateMachineActions::Driver_Failed_process(Message *m)
-{
-    return SM_HANDLED;
-}
-
-stateprocess_t WifiStateMachineActions::Driver_Loading_process(Message *m)
-{
-    return SM_DEFAULT;
-}
-stateprocess_t WifiStateMachineActions::Driver_Loaded_process(Message *m)
-{
-    return SM_DEFAULT;
-}
-stateprocess_t WifiStateMachineActions::Driver_Unloaded_process(Message *m)
-{
-    return SM_DEFAULT;
-}
-stateprocess_t WifiStateMachineActions::Driver_Unloading_process(Message *m)
-{
-    return SM_DEFAULT;
-}
-stateprocess_t WifiStateMachineActions::Driver_Starting_process(Message *m)
-{
-    return SM_NOT_HANDLED;
 }
 stateprocess_t WifiStateMachine::invoke_process(int state, Message *message, STATE_TABLE_TYPE *state_table)
 {
@@ -1219,7 +1047,30 @@ stateprocess_t WifiStateMachine::invoke_process(int state, Message *message, STA
 caseover:;
     PROCESS_PROTO fn = mStateMap[state].mProcess;
     if (result == SM_NOT_HANDLED)
+#if 0
         result = (static_cast<WifiStateMachineActions *>(this)->*static_cast<WPROCESS_PROTO>(fn))(message);
+#else
+        switch (state) {
+        case SUPPLICANT_STOPPING_STATE:
+            mService->BroadcastState(WS_DISABLING);
+            if (!doWifiBooleanCommand("TERMINATE"))
+                request_wifi(WIFI_STOP_SUPPLICANT);
+            transitionTo(DRIVER_LOADED_STATE);
+            result = SM_HANDLED;
+            break;
+        case DRIVER_FAILED_STATE:
+            result = SM_HANDLED;
+            break;
+        case DRIVER_LOADING_STATE: case DRIVER_LOADED_STATE:
+        case DRIVER_UNLOADING_STATE: case DRIVER_UNLOADED_STATE:
+            result = SM_DEFAULT;
+            break;
+        case DRIVER_STARTING_STATE:
+            break;
+        default:
+            result = process_action(state, message);
+        }
+#endif
     if (result == SM_DEFAULT) {
         STATE_TRANSITION *t = state_table[state].tran;
         result = SM_NOT_HANDLED;

@@ -61,6 +61,7 @@ protected:
     String8                    ncommand(const char *fmt, ...);
     void                       disable_interface(void);
 private:
+    stateprocess_t             process_action(int state, Message *message);
     mutable Mutex              mLock;     // Protects the response queue
     mutable Condition          mCondition;
     int                        mFd;
