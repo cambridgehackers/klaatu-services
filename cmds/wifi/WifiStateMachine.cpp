@@ -868,9 +868,7 @@ stateprocess_t WifiStateMachineActions::Disconnecting_process(Message *message)
         break;
     case SUP_STATE_CHANGE_EVENT:
         disable_interface();
-        //if (mEnableBackgroundScan && !mScanResultIsPending)
-            //doWifiBooleanCommand("DRIVER BGSCAN-START");
-        break; //return SM_HANDLED;
+        break;
     case CMD_DISCONNECT:
         return SM_HANDLED;
     case SUP_SCAN_RESULTS_EVENT:    // Go back to "connect" mode
@@ -901,10 +899,6 @@ stateprocess_t WifiStateMachineActions::Driver_Loading_process(Message *m)
 {
     return SM_DEFAULT;
 }
-stateprocess_t WifiStateMachineActions::Driver_Starting_process(Message *m)
-{
-    return SM_NOT_HANDLED;
-}
 stateprocess_t WifiStateMachineActions::Driver_Loaded_process(Message *m)
 {
     return SM_DEFAULT;
@@ -916,6 +910,10 @@ stateprocess_t WifiStateMachineActions::Driver_Unloaded_process(Message *m)
 stateprocess_t WifiStateMachineActions::Driver_Unloading_process(Message *m)
 {
     return SM_DEFAULT;
+}
+stateprocess_t WifiStateMachineActions::Driver_Starting_process(Message *m)
+{
+    return SM_NOT_HANDLED;
 }
 stateprocess_t WifiStateMachine::invoke_process(int state, Message *message, STATE_TABLE_TYPE *state_table)
 {
@@ -987,7 +985,6 @@ stateprocess_t WifiStateMachine::invoke_process(int state, Message *message, STA
         break;
     case NETWORK_CONNECTION_EVENT:
         request_wifi(DHCP_DO_REQUEST);
-        SLOGV("....after DHCP_DO_REQUEST\n");
         {
         Mutex::Autolock _l(mReadLock);
         mWifiInformation.bssid = message->string();
@@ -1246,38 +1243,34 @@ stateprocess_t WifiStateMachine::invoke_process(int state, Message *message, STA
     }
 caseover:;
     PROCESS_PROTO fn = mStateMap[state].mProcess;
-    if (result == SM_NOT_HANDLED && fn) {
-            result = (static_cast<WifiStateMachineActions *>(this)->*static_cast<WPROCESS_PROTO>(fn))(message);
-            if (result == SM_DEFAULT) {
-                STATE_TRANSITION *t = state_table[state].tran;
-                result = SM_NOT_HANDLED;
-                while (t && t->state) {
-                    if (t->event == message->command()) {
-                        result = SM_DEFER;
-                        if (t->state != DEFER_STATE) {
-                            SLOGV("......Transition to %s\n", state_table[t->state].name);
-                            transitionTo(t->state);
-                            result = SM_HANDLED;
-                        }
-                        break;
-                    }
-                    t++;
+    if (result == SM_NOT_HANDLED)
+        result = (static_cast<WifiStateMachineActions *>(this)->*static_cast<WPROCESS_PROTO>(fn))(message);
+    if (result == SM_DEFAULT) {
+        STATE_TRANSITION *t = state_table[state].tran;
+        result = SM_NOT_HANDLED;
+        while (t && t->state) {
+            if (t->event == message->command()) {
+                result = SM_DEFER;
+                if (t->state != DEFER_STATE) {
+                    SLOGV("......Transition to %s\n", state_table[t->state].name);
+                    transitionTo(t->state);
+                    result = SM_HANDLED;
                 }
+                break;
             }
-            if (result == SM_NOT_HANDLED) {
-                STATE_TRANSITION *t = state_table[DEFAULT_STATE].tran;
-                while (t && t->state) {
-                    if (t->event == message->command()) {
-                        SLOGV("......DEFAULT transition to %s\n", state_table[t->state].name);
-                        transitionTo(t->state);
-                        result = SM_HANDLED;
-                        break;
-                    }
-                    t++;
-                }
-            }
+            t++;
+        }
     }
     if (result == SM_NOT_HANDLED) {
+        STATE_TRANSITION *t = state_table[DEFAULT_STATE].tran;
+        while (t && t->state) {
+            if (t->event == message->command()) {
+                SLOGV("......DEFAULT transition to %s\n", state_table[t->state].name);
+                transitionTo(t->state);
+                return SM_HANDLED;
+            }
+            t++;
+        }
         switch (message->command()) {
         case SUP_SCAN_RESULTS_EVENT:
         case CMD_LOAD_DRIVER: case CMD_UNLOAD_DRIVER:
