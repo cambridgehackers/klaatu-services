@@ -652,10 +652,6 @@ stateprocess_t WifiStateMachineActions::Driver_Stopped_process(Message *message)
         // mSupplicantStateTracker.sendMessage(CMD_RESET_SUPPLICANT_STATE);
         // mWpsStateMachine.sendMessage(CMD_RESET_WPS_STATE);
         break;
-#if 0
-    case SUP_SCAN_RESULTS_EVENT:
-        return SM_HANDLED;
-#endif
     case CMD_STOP_SUPPLICANT:
         disable_interface();
         break;
@@ -671,11 +667,6 @@ stateprocess_t WifiStateMachineActions::Driver_Started_process(Message *message)
         if (mEnableBackgroundScan && !mScanResultIsPending)
             doWifiBooleanCommand("DRIVER BGSCAN-START");
         return SM_HANDLED;
-#if 0
-    case SUP_SCAN_RESULTS_EVENT:
-    case SUP_STATE_CHANGE_EVENT:
-        return SM_HANDLED;
-#endif
     case SUP_DISCONNECTION_EVENT:
         restartSupplicant(this);
         request_wifi(WIFI_CLOSE_SUPPLICANT);
@@ -709,10 +700,6 @@ stateprocess_t WifiStateMachineActions::Connecting_process(Message *message)
         if (mEnableBackgroundScan && !mScanResultIsPending)
             doWifiBooleanCommand("DRIVER BGSCAN-START");
         return SM_HANDLED;
-#if 0
-    case CMD_DISCONNECT:
-        return SM_HANDLED;
-#endif
     case CMD_STOP_SUPPLICANT:
         disable_interface();
         break;
@@ -830,12 +817,6 @@ stateprocess_t WifiStateMachineActions::Supplicant_Stopping_process(Message *mes
 stateprocess_t WifiStateMachineActions::Driver_Stopping_process(Message *message)
 {
     switch (message->command()) {
-#if 0
-    case SUP_STATE_CHANGE_EVENT:
-        if (mWifiInformation.supplicant_state != WPA_INTERFACE_DISABLED)
-            return SM_HANDLED;
-        break;
-#endif
     case SUP_DISCONNECTION_EVENT:
         restartSupplicant(this);
         request_wifi(WIFI_CLOSE_SUPPLICANT);
@@ -845,10 +826,6 @@ stateprocess_t WifiStateMachineActions::Driver_Stopping_process(Message *message
         // mSupplicantStateTracker.sendMessage(CMD_RESET_SUPPLICANT_STATE);
         // mWpsStateMachine.sendMessage(CMD_RESET_WPS_STATE);
         break;
-#if 0
-    case SUP_SCAN_RESULTS_EVENT:
-        return SM_HANDLED;
-#endif
     case CMD_STOP_SUPPLICANT:
         disable_interface();
         break;
