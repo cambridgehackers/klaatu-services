@@ -124,10 +124,6 @@ bool WifiStateMachine::process_indication()
     return false;
 }
 
-//static const char *neweventname[] = {"CTRL_EVENT_LINK_SPEED", "CTRL_EVENT_DRIVER_STATE",
-        //"CTRL_EVENT_EAP_FAILURE", "CTRL_EVENT_BSS_ADDED", "CTRL_EVENT_BSS_REMOVED",
-        //"KEY_COMPLETED_EVENT", "ASSOCIATED_WITH_EVENT", "WPS_AP_AVAILABLE_EVENT",
-        //"NETWORK_RECONNECTION_EVENT"};
 int WifiStateMachine::request_wifi(int request)
 {
     static const char *reqname[] = {"",
@@ -135,10 +131,6 @@ int WifiStateMachine::request_wifi(int request)
         "WIFI_START_SUPPLICANT", "WIFI_STOP_SUPPLICANT",
         "WIFI_CONNECT_SUPPLICANT", "WIFI_CLOSE_SUPPLICANT", "WIFI_WAIT_EVENT",
         "DHCP_STOP", "DHCP_DO_REQUEST"};
-    //enum {CTRL_EVENT_LINK_SPEED = 100, CTRL_EVENT_DRIVER_STATE,
-        //CTRL_EVENT_EAP_FAILURE, CTRL_EVENT_BSS_ADDED, CTRL_EVENT_BSS_REMOVED,
-        //KEY_COMPLETED_EVENT, ASSOCIATED_WITH_EVENT, WPS_AP_AVAILABLE_EVENT,
-        //NETWORK_RECONNECTION_EVENT};
     static struct {
         const char *name;
         int event;
@@ -183,13 +175,11 @@ int WifiStateMachine::request_wifi(int request)
         break;
         }
     case WIFI_LOAD_DRIVER:
-        /*
-          The Driver states refer to the kernel model.  Executing
+        /* The Driver states refer to the kernel model.  Executing
           "wifi_load_driver()" causes the appropriate kernel model for your
           board to be inserted and executes a firmware loader.  
           This is tied in tightly to the property system, looking at the
-          "wlan.driver.status" property to see if the driver has been loaded.
-         */
+          "wlan.driver.status" property to see if the driver has been loaded. */
         ret = wifi_load_driver();
         enqueue(!ret ? CMD_LOAD_DRIVER_SUCCESS : CMD_LOAD_DRIVER_FAILURE);
         break;
@@ -662,8 +652,10 @@ stateprocess_t WifiStateMachineActions::Driver_Stopped_process(Message *message)
         // mSupplicantStateTracker.sendMessage(CMD_RESET_SUPPLICANT_STATE);
         // mWpsStateMachine.sendMessage(CMD_RESET_WPS_STATE);
         break;
+#if 0
     case SUP_SCAN_RESULTS_EVENT:
         return SM_HANDLED;
+#endif
     case CMD_STOP_SUPPLICANT:
         disable_interface();
         break;
@@ -679,9 +671,11 @@ stateprocess_t WifiStateMachineActions::Driver_Started_process(Message *message)
         if (mEnableBackgroundScan && !mScanResultIsPending)
             doWifiBooleanCommand("DRIVER BGSCAN-START");
         return SM_HANDLED;
+#if 0
     case SUP_SCAN_RESULTS_EVENT:
     case SUP_STATE_CHANGE_EVENT:
         return SM_HANDLED;
+#endif
     case SUP_DISCONNECTION_EVENT:
         restartSupplicant(this);
         request_wifi(WIFI_CLOSE_SUPPLICANT);
@@ -715,8 +709,10 @@ stateprocess_t WifiStateMachineActions::Connecting_process(Message *message)
         if (mEnableBackgroundScan && !mScanResultIsPending)
             doWifiBooleanCommand("DRIVER BGSCAN-START");
         return SM_HANDLED;
+#if 0
     case CMD_DISCONNECT:
         return SM_HANDLED;
+#endif
     case CMD_STOP_SUPPLICANT:
         disable_interface();
         break;
@@ -834,10 +830,12 @@ stateprocess_t WifiStateMachineActions::Supplicant_Stopping_process(Message *mes
 stateprocess_t WifiStateMachineActions::Driver_Stopping_process(Message *message)
 {
     switch (message->command()) {
+#if 0
     case SUP_STATE_CHANGE_EVENT:
         if (mWifiInformation.supplicant_state != WPA_INTERFACE_DISABLED)
             return SM_HANDLED;
         break;
+#endif
     case SUP_DISCONNECTION_EVENT:
         restartSupplicant(this);
         request_wifi(WIFI_CLOSE_SUPPLICANT);
@@ -847,8 +845,10 @@ stateprocess_t WifiStateMachineActions::Driver_Stopping_process(Message *message
         // mSupplicantStateTracker.sendMessage(CMD_RESET_SUPPLICANT_STATE);
         // mWpsStateMachine.sendMessage(CMD_RESET_WPS_STATE);
         break;
+#if 0
     case SUP_SCAN_RESULTS_EVENT:
         return SM_HANDLED;
+#endif
     case CMD_STOP_SUPPLICANT:
         disable_interface();
         break;
@@ -1271,6 +1271,7 @@ caseover:;
         }
         switch (message->command()) {
         case SUP_SCAN_RESULTS_EVENT:
+        case SUP_STATE_CHANGE_EVENT:
         case CMD_LOAD_DRIVER: case CMD_UNLOAD_DRIVER:
         case CMD_START_SUPPLICANT: case CMD_STOP_SUPPLICANT:
         case SUP_CONNECTION_EVENT: case SUP_DISCONNECTION_EVENT:
