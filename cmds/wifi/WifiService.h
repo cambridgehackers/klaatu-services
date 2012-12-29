@@ -12,7 +12,7 @@
 namespace android {
 class WifiServerClient;
 class WifiStateMachine;
-class WifiService : // public BinderService<WifiService>,
+class WifiService : public BinderService<WifiService>,
 	public BnWifiService,
 	public IBinder::DeathRecipient
 {
@@ -36,6 +36,7 @@ public:
     void BroadcastInformation(const WifiInformation& info);
     void BroadcastRssi(int rssi);
     void BroadcastLinkSpeed(int link_speed);
+    static char const* getServiceName() { return "wifi"; }
 
 private:
     mutable Mutex     mLock;

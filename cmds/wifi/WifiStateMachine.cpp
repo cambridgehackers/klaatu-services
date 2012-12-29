@@ -729,6 +729,7 @@ stateprocess_t WifiStateMachine::process_action(int state, Message *message)
     }
     return SM_DEFAULT;
 }
+
 stateprocess_t WifiStateMachine::invoke_process(int state, Message *message, STATE_TABLE_TYPE *state_table)
 {
     stateprocess_t result = SM_NOT_HANDLED;

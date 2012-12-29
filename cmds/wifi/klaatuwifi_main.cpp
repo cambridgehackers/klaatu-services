@@ -229,15 +229,26 @@ int main(int argc, char **argv)
     if (argc > 1)
 	usage();
 
+#if 0
     // The instantiate function from BinderService.h conflicts with the Singleton function
     // WifiService::instantiate();
     // So we need to do the "publishAndJoinThreadPool()" function by hand
 
     sp<ProcessState> proc(ProcessState::self());
+
     sp<IServiceManager> sm(defaultServiceManager());
     sm->addService(String16("wifi"), new WifiService());
     ProcessState::self()->startThreadPool();
     /* Add the calling thread to the IPC thread pool. This function does not return until exit. */
     IPCThreadState::self()->joinThreadPool();
+#endif
+    WifiService::publishAndJoinThreadPool();
+#if 0 ////////////
+        sp<IServiceManager> sm(defaultServiceManager());
+        sm->addService(String16(SERVICE::getServiceName()), new SERVICE(), allowIsolated);
+        ProcessState::self()->startThreadPool();
+        IPCThreadState::self()->joinThreadPool();
+    SensorService::publishAndJoinThreadPool();
+#endif
     return 0;
 }
