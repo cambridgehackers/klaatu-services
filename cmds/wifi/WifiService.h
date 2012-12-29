@@ -13,8 +13,7 @@ namespace android {
 class WifiServerClient;
 class WifiStateMachine;
 class WifiService : public BinderService<WifiService>,
-	public BnWifiService,
-	public IBinder::DeathRecipient
+	public BnWifiService, public IBinder::DeathRecipient
 {
 public:
     WifiService();

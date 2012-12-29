@@ -218,10 +218,6 @@ using namespace android;
 
 int main(int argc, char **argv)
 {
-    if (argc > 1) {
-        printf("wifi - Presents a binder interface to Wifi\n\n");
-        exit(0);
-    }
     WifiService::publishAndJoinThreadPool();
     return 0;
 }
