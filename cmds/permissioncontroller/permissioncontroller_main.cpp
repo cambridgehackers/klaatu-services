@@ -25,16 +25,13 @@
 
 #include <binder/BinderService.h>
 #include <binder/IPermissionController.h>
-#include <utils/Singleton.h>
-#include <utils/String16.h>
 
-using namespace android;
+namespace android {
 
 class PermissionController : public BinderService<PermissionController>,
-    public BnPermissionController, public Singleton<PermissionController>
+    public BnPermissionController
 {
     friend class BinderService<PermissionController>;
-
 public:
     static const char *getServiceName() { return "permission"; }
     // BnPermissionController
@@ -44,11 +41,11 @@ public:
     }
 };
 
+};  // namespace android
+
 int main(int argc, char **argv)
 {
-    sp<ProcessState> proc(ProcessState::self());
-    PermissionController::instantiate();
-    ProcessState::self()->startThreadPool();
-    IPCThreadState::self()->joinThreadPool();
+    android::PermissionController::publishAndJoinThreadPool();
     return 0;
 }
+
