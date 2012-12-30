@@ -190,14 +190,14 @@ void PhoneMachine::sendToRILD(RILRequest *request)
  */
 typedef struct {
     int message;
-    int flags;
+    UnsolicitedMessages flags;
 } MAPTYPE;
 static MAPTYPE eventmap[] = {
     {RIL_UNSOL_RESPONSE_RADIO_STATE_CHANGED, UM_RADIO_STATE_CHANGED},
     {RIL_UNSOL_RESPONSE_CALL_STATE_CHANGED, UM_CALL_STATE_CHANGED},
     {RIL_UNSOL_RESPONSE_VOICE_NETWORK_STATE_CHANGED, UM_VOICE_NETWORK_STATE_CHANGED},
     {RIL_UNSOL_NITZ_TIME_RECEIVED, UM_NITZ_TIME_RECEIVED},
-    {RIL_UNSOL_SIGNAL_STRENGTH, UM_SIGNAL_STRENGTH}, {0,0}};
+    {RIL_UNSOL_SIGNAL_STRENGTH, UM_SIGNAL_STRENGTH}, {0,UM_NONE}};
 
 void PhoneMachine::receiveUnsolicited(const Parcel& data)
 {
@@ -208,7 +208,7 @@ void PhoneMachine::receiveUnsolicited(const Parcel& data)
     MAPTYPE *pmap = eventmap;
 
     SLOGD("<<< Unsolicited message=%s [%d]\n", rilMessageStr(message), message);
-    while (pmap->message && message != pmap->message)
+    while (pmap->flags != UM_NONE && message != pmap->message)
         pmap++;
     if (pmap->flags)
 	flags = pmap->flags;
