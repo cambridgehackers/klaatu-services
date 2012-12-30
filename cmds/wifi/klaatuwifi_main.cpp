@@ -1,11 +1,6 @@
 
 #include <stdio.h>
-#include <binder/IServiceManager.h>
-#include <binder/IPCThreadState.h>
-#include <binder/ProcessState.h>
-#include <binder/IServiceManager.h>
 #include <cutils/properties.h>
-#include <binder/Parcel.h>
 #include "WifiService.h"
 #include "WifiStateMachine.h"
 

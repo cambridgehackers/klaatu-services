@@ -8,7 +8,6 @@
 #ifndef _WIFI_STATE_MACHINE_H
 #define _WIFI_STATE_MACHINE_H
 
-#include <utils/String8.h>
 #include <wifi/IWifiClient.h>
 #include "StateMachine.h"
 
