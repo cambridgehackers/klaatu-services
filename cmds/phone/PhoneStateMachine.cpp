@@ -24,49 +24,6 @@ static const char * rilMessageStr(int message)
     }
 }
 
-static int beginIncomingThread(void *cookie)
-{
-    return static_cast<PhoneMachine *>(cookie)->incomingThread();
-}
-
-static int beginOutgoingThread(void *cookie)
-{
-    return static_cast<PhoneMachine *>(cookie)->outgoingThread();
-}
-
-PhoneMachine::PhoneMachine(PhoneService *service)
-    : mRILfd(-1)
-    , mAudioMode(AUDIO_MODE_NORMAL)  // Strictly speaking we should initialize this 
-    , mService(service)
-{
-    char *flags = ::getenv("DEBUG_PHONE");
-    if (flags != NULL) {
-	mDebug = DEBUG_BASIC;
-	char *token = strtok(flags, ":");
-	while (token != NULL) {
-	    if (!strncasecmp(token, "in", 2))
-		mDebug |= DEBUG_INCOMING;
-	    else if (!strncasecmp(token, "out", 3))
-		mDebug |= DEBUG_OUTGOING;
-	    token = strtok(NULL, ":");
-	}
-    }
-    mRILfd = socket_local_client("rild", ANDROID_SOCKET_NAMESPACE_RESERVED, SOCK_STREAM);
-    if (mRILfd < 0) {
-	perror("opening rild socket");
-	exit(-1);
-    }
-    if (AudioSystem::setMasterMute(false) != NO_ERROR)
-	LOG_ALWAYS_FATAL("Unable to write master mute to false\n");
-    SLOGV("Audio configured\n");
-    
-    if (createThread(beginOutgoingThread, this) == false) 
-	LOG_ALWAYS_FATAL("ERROR!  Unable to create outgoing thread for RILD socket\n");
-
-    if (createThread(beginIncomingThread, this) == false) 
-	LOG_ALWAYS_FATAL("ERROR!  Unable to create incoming thread for RILD socket\n");
-}
-
 class RILCall {
 public:
     RILCall(const Parcel& data) {
@@ -125,14 +82,12 @@ public:
 
 class RILRequest {
 public:
-    // Use a static creator in case we decide later to keep a pool of request objects
-    static RILRequest *create(int token, int message, const sp<IPhoneClient>& client) {
-	return new RILRequest(client, token, message);
+    RILRequest(const sp<IPhoneClient>& client, int token, int message) 
+	: mClient(client) , mToken(token) , mMessage(message)
+	, mSerialNumber(sSerialNumber++) , mError(0) {
+	mParcel.writeInt32(message);
+	mParcel.writeInt32(mSerialNumber);
     }
-
-    // Used internally by PhoneService
-    static RILRequest *create(int message) { return new RILRequest(NULL, -1, message); }
-
     void writeString(const String16& data) { mParcel.writeString16(data); }
     void writeInt(int n) { mParcel.writeInt32(n); }
     void setError(int err) { mError = err; }
@@ -143,18 +98,6 @@ public:
     int           token() const { return mToken; }
     int           message() const { return mMessage; }
 
-private:
-    RILRequest(const sp<IPhoneClient>& client, int token, int message) 
-	: mClient(client)
-	, mToken(token)
-	, mMessage(message)
-	, mSerialNumber(sSerialNumber++)
-	, mError(0) {
-	mParcel.writeInt32(message);
-	mParcel.writeInt32(mSerialNumber);
-    }
-
-public:
     sp<IPhoneClient> mClient;
     Parcel           mParcel;
     int              mToken;
@@ -168,61 +111,27 @@ private:
 
 int RILRequest::sSerialNumber = 0;
 
-// ---------------------------------------------------------------------------
-
-const int RESPONSE_SOLICITED = 0;
-const int RESPONSE_UNSOLICITED = 1;
-
-/*
-  This thread reads from the RIL daemon and sends messages to 
-  appropriate clients.
-
-  ### TODO:  If we get a bad read from rild, we should drop this 
-         server or log an error or do something suitable
- */
-
-int PhoneMachine::incomingThread()
+void PhoneMachine::updateAudioMode(audio_mode_t mode)
 {
-    while (1) {
-	uint32_t header;
-	int ret = read(mRILfd, &header, sizeof(header));
-
-	if (ret != sizeof(header)) {
-	    SLOGW("Read %d bytes instead of %d\n", ret, sizeof(header));
-	    perror("PhoneMachine::incomingThread read on header");
-	    return ret;
-	}
-
-	int data_size = ntohl(header);
-	Parcel data;
-	ret = read(mRILfd, data.writeInplace(data_size), data_size);
-	if (ret != data_size) {
-	    perror("PhoneMachine::incomingThread read on payload");
-	    return ret;
-	}
-
-	if (mDebug & DEBUG_INCOMING) {
-	    SLOGV("<<<<<<< INCOMING <<<<<<<<<<\n");
-	    const uint8_t *ptr = data.data();
-	    for (int i = 0 ; i < data_size ; i++ ) {
-		SLOGV("%02x ", *ptr++);
-		if ((i+1) % 8 == 0 || (i+1 >= data_size))
-		    SLOGV("\n");
-	    }
-	    SLOGV("<<<<<<<<<<<<<<<<<<<<<<<<<<<\n");
-	}
-
-	data.setDataPosition(0);
-	int type = data.readInt32();
-//	SLOGV("New message received: %d bytes type=%s\n", data_size, 
-//	       (type ==RESPONSE_SOLICITED ? "solicited" : "unsolicited"));
-
-	if (type == RESPONSE_UNSOLICITED) 
-	    receiveUnsolicited(data);
-	else
-	    receiveSolicited(data);
+    if (mode != mAudioMode) {
+	SLOGV("######### Updating the audio mode from %d to %d #############\n", mAudioMode, mode);
+	if (AudioSystem::setMode(mode) != NO_ERROR)
+	    SLOGW("Unable to set the audio mode\n");
+	mAudioMode = mode;
     }
-    return NO_ERROR;
+}
+
+RILRequest *PhoneMachine::getPending(int serial_number)
+{
+    Mutex::Autolock _l(mLock);
+    for (size_t i = 0 ; i < mPendingRequests.size() ; i++) {
+	RILRequest *request = mPendingRequests[i];
+	if (request->serial() == serial_number) {
+	    mPendingRequests.removeAt(i);
+	    return request;
+	}
+    }
+    return NULL;
 }
 
 /*
@@ -286,19 +195,6 @@ void PhoneMachine::sendToRILD(RILRequest *request)
     mCondition.signal();
 }
 
-RILRequest *PhoneMachine::getPending(int serial_number)
-{
-    Mutex::Autolock _l(mLock);
-    for (size_t i = 0 ; i < mPendingRequests.size() ; i++) {
-	RILRequest *request = mPendingRequests[i];
-	if (request->serial() == serial_number) {
-	    mPendingRequests.removeAt(i);
-	    return request;
-	}
-    }
-    return NULL;
-}
-
 /*
   An unsolicited message has been received from rild.  Broadcast
   the message to all registered clients.
@@ -321,7 +217,7 @@ void PhoneMachine::receiveUnsolicited(const Parcel& data)
 	flags = UM_RADIO_STATE_CHANGED;
 	SLOGD("    RIL Radio state changed to %d\n", ivalue);
 	if (ivalue == RADIO_STATE_OFF) {
-	    RILRequest * request = RILRequest::create(RIL_REQUEST_RADIO_POWER);
+	    RILRequest * request = new RILRequest(NULL, -1, RIL_REQUEST_RADIO_POWER);
 	    request->writeInt(1);  // One value
 	    request->writeInt(1);  // Turn the radio on
 	    sendToRILD(request);
@@ -332,7 +228,7 @@ void PhoneMachine::receiveUnsolicited(const Parcel& data)
 	flags = UM_CALL_STATE_CHANGED;
 	// Invoke RIL_REQUEST_GET_CURRENT_CALLS
 	SLOGD("    Call state changed\n");
-	sendToRILD(RILRequest::create(RIL_REQUEST_GET_CURRENT_CALLS));
+	sendToRILD(new RILRequest(NULL, -1, RIL_REQUEST_GET_CURRENT_CALLS));
 	break;
 
     case RIL_UNSOL_RESPONSE_VOICE_NETWORK_STATE_CHANGED:
@@ -361,19 +257,8 @@ void PhoneMachine::receiveUnsolicited(const Parcel& data)
 	SLOGD("### Unhandled unsolicited message received from RIL: %d\n", message);
 	break;
     }
-
     if (flags)
 	mService->broadcastUnsolicited(flags, message, ivalue, svalue);
-}
-
-void PhoneMachine::updateAudioMode(audio_mode_t mode)
-{
-    if (mode != mAudioMode) {
-	SLOGV("######### Updating the audio mode from %d to %d #############\n", mAudioMode, mode);
-	if (AudioSystem::setMode(mode) != NO_ERROR)
-	    SLOGW("Unable to set the audio mode\n");
-	mAudioMode = mode;
-    }
 }
 
 /*
@@ -479,11 +364,67 @@ void PhoneMachine::receiveSolicited(const Parcel& data)
     delete request;
 }
 
+// ---------------------------------------------------------------------------
+
+const int RESPONSE_SOLICITED = 0;
+
+/*
+  This thread reads from the RIL daemon and sends messages to 
+  appropriate clients.
+
+  ### TODO:  If we get a bad read from rild, we should drop this 
+         server or log an error or do something suitable
+ */
+
+int PhoneMachine::incomingThread()
+{
+    while (1) {
+	uint32_t header;
+	int ret = read(mRILfd, &header, sizeof(header));
+
+	if (ret != sizeof(header)) {
+	    SLOGW("Read %d bytes instead of %d\n", ret, sizeof(header));
+	    perror("PhoneMachine::incomingThread read on header");
+	    return ret;
+	}
+
+	int data_size = ntohl(header);
+	Parcel data;
+	ret = read(mRILfd, data.writeInplace(data_size), data_size);
+	if (ret != data_size) {
+	    perror("PhoneMachine::incomingThread read on payload");
+	    return ret;
+	}
+
+	if (mDebug & DEBUG_INCOMING) {
+	    SLOGV("<<<<<<< INCOMING <<<<<<<<<<\n");
+	    const uint8_t *ptr = data.data();
+	    for (int i = 0 ; i < data_size ; i++ ) {
+		SLOGV("%02x ", *ptr++);
+		if ((i+1) % 8 == 0 || (i+1 >= data_size))
+		    SLOGV("\n");
+	    }
+	    SLOGV("<<<<<<<<<<<<<<<<<<<<<<<<<<<\n");
+	}
+
+	data.setDataPosition(0);
+	int type = data.readInt32();
+//	SLOGV("New message received: %d bytes type=%s\n", data_size, 
+//	       (type ==RESPONSE_SOLICITED ? "solicited" : "unsolicited"));
+
+	if (type == RESPONSE_SOLICITED) 
+	    receiveSolicited(data);
+	else
+	    receiveUnsolicited(data);
+    }
+    return NO_ERROR;
+}
+
 void PhoneMachine::Request(const sp<IPhoneClient>& client, int token, int message, int ivalue, const String16& svalue) 
 {
     SLOGV("Client request: token=%d message=%d ivalue=%d\n", token, message, ivalue);
 
-    RILRequest *request = RILRequest::create(token, message, client);
+    RILRequest *request = new RILRequest(client, token, message);
     switch(message) {
     case RIL_REQUEST_GET_SIM_STATUS:	break;
     case RIL_REQUEST_GET_CURRENT_CALLS:	break;
@@ -516,8 +457,49 @@ void PhoneMachine::Request(const sp<IPhoneClient>& client, int token, int messag
 	// ### TODO:  Put in an error code here and send the message back
 	break;
     }
-
     sendToRILD(request);
+}
+
+static int beginIncomingThread(void *cookie)
+{
+    return static_cast<PhoneMachine *>(cookie)->incomingThread();
+}
+
+static int beginOutgoingThread(void *cookie)
+{
+    return static_cast<PhoneMachine *>(cookie)->outgoingThread();
+}
+
+PhoneMachine::PhoneMachine(PhoneService *service)
+    : mRILfd(-1)
+    , mAudioMode(AUDIO_MODE_NORMAL)  // Strictly speaking we should initialize this 
+    , mService(service)
+{
+    char *flags = ::getenv("DEBUG_PHONE");
+    if (flags != NULL) {
+	mDebug = DEBUG_BASIC;
+	char *token = strtok(flags, ":");
+	while (token != NULL) {
+	    if (!strncasecmp(token, "in", 2))
+		mDebug |= DEBUG_INCOMING;
+	    else if (!strncasecmp(token, "out", 3))
+		mDebug |= DEBUG_OUTGOING;
+	    token = strtok(NULL, ":");
+	}
+    }
+    mRILfd = socket_local_client("rild", ANDROID_SOCKET_NAMESPACE_RESERVED, SOCK_STREAM);
+    if (mRILfd < 0) {
+	perror("opening rild socket");
+	exit(-1);
+    }
+    if (AudioSystem::setMasterMute(false) != NO_ERROR)
+	LOG_ALWAYS_FATAL("Unable to write master mute to false\n");
+    SLOGV("Audio configured\n");
+    
+    if (createThread(beginOutgoingThread, this) == false) 
+	LOG_ALWAYS_FATAL("ERROR!  Unable to create outgoing thread for RILD socket\n");
+    if (createThread(beginIncomingThread, this) == false) 
+	LOG_ALWAYS_FATAL("ERROR!  Unable to create incoming thread for RILD socket\n");
 }
 
 };  // namespace android
