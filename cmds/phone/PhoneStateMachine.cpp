@@ -52,12 +52,10 @@ public:
 	    }
 	}
     }
-
     ~RILCall() {
 	if (hasUusInfo && uusData)
 	    delete uusData;
     }
-
     RIL_CallState   state;
     int             index;      /* Connection Index for use with, eg, AT+CHLD */
     int             toa;        /* type of address, eg 145 = intl */
@@ -70,7 +68,6 @@ public:
     int             numberPresentation; /* 0=Allowed, 1=Restricted, 2=Not Specified/Unknown 3=Payphone */
     String16        name;       /* Remote party name */
     int             namePresentation; /* 0=Allowed, 1=Restricted, 2=Not Specified/Unknown 3=Payphone */
-    
     bool            hasUusInfo;
     RIL_UUS_Type    uusType;    /* UUS Type */
     RIL_UUS_DCS     uusDcs;     /* UUS Data Coding Scheme */
@@ -91,20 +88,17 @@ public:
     void writeString(const String16& data) { mParcel.writeString16(data); }
     void writeInt(int n) { mParcel.writeInt32(n); }
     void setError(int err) { mError = err; }
-
     const sp<IPhoneClient> client() const { return mClient; }
     const Parcel& parcel() const { return mParcel; }
     int           serial() const { return mSerialNumber; }
     int           token() const { return mToken; }
     int           message() const { return mMessage; }
-
     sp<IPhoneClient> mClient;
     Parcel           mParcel;
     int              mToken;
     int              mMessage;
     int              mSerialNumber;
     int              mError;
-
 private:
     static int       sSerialNumber;
 };
@@ -135,26 +129,22 @@ RILRequest *PhoneMachine::getPending(int serial_number)
 }
 
 /*
-  This thread writes messages to rild.
-
+  This thread writes messages to rild socket.
   #### TODO:  If we get a bad write to rild, we should drop this 
               server or log an error or do something suitable
  */
 
 int PhoneMachine::outgoingThread()
 {
-    // Write messages to the socket here
     while (1) {
 	// Grab the first item on the list
 	mLock.lock();
 	while (mOutgoingRequests.size() == 0)
 	    mCondition.wait(mLock);
-
 	RILRequest *request = mOutgoingRequests[0];
 	mOutgoingRequests.removeAt(0);
 	mPendingRequests.push(request);
 	mLock.unlock();
-	    
 	const Parcel& p(request->parcel());
 	// Send the item
 	if (mDebug & DEBUG_OUTGOING) {
@@ -167,7 +157,6 @@ int PhoneMachine::outgoingThread()
 	    }
 	    SLOGV(">>>>>>>>>>>>>>>>>>>>>>>>>>>\n");
 	}
-
 	int header = htonl(p.dataSize());
 	int ret = ::send(mRILfd, (const void *)&header, sizeof(header), 0);
 	if (ret != sizeof(header)) {
@@ -198,9 +187,17 @@ void PhoneMachine::sendToRILD(RILRequest *request)
 /*
   An unsolicited message has been received from rild.  Broadcast
   the message to all registered clients.
-
-  This function runs in the rild receiving thread.
  */
+typedef struct {
+    int message;
+    int flags;
+} MAPTYPE;
+static MAPTYPE eventmap[] = {
+    {RIL_UNSOL_RESPONSE_RADIO_STATE_CHANGED, UM_RADIO_STATE_CHANGED},
+    {RIL_UNSOL_RESPONSE_CALL_STATE_CHANGED, UM_CALL_STATE_CHANGED},
+    {RIL_UNSOL_RESPONSE_VOICE_NETWORK_STATE_CHANGED, UM_VOICE_NETWORK_STATE_CHANGED},
+    {RIL_UNSOL_NITZ_TIME_RECEIVED, UM_NITZ_TIME_RECEIVED},
+    {RIL_UNSOL_SIGNAL_STRENGTH, UM_SIGNAL_STRENGTH}, {0,0}};
 
 void PhoneMachine::receiveUnsolicited(const Parcel& data)
 {
@@ -208,13 +205,16 @@ void PhoneMachine::receiveUnsolicited(const Parcel& data)
     int ivalue  = 0;
     String16 svalue;
     UnsolicitedMessages flags = UM_NONE;
+    MAPTYPE *pmap = eventmap;
 
     SLOGD("<<< Unsolicited message=%s [%d]\n", rilMessageStr(message), message);
-
+    while (pmap->message && message != pmap->message)
+        pmap++;
+    if (pmap->flags)
+	flags = pmap->flags;
     switch (message) {
     case RIL_UNSOL_RESPONSE_RADIO_STATE_CHANGED: 
 	ivalue = data.readInt32(); 
-	flags = UM_RADIO_STATE_CHANGED;
 	SLOGD("    RIL Radio state changed to %d\n", ivalue);
 	if (ivalue == RADIO_STATE_OFF) {
 	    RILRequest * request = new RILRequest(NULL, -1, RIL_REQUEST_RADIO_POWER);
@@ -223,36 +223,24 @@ void PhoneMachine::receiveUnsolicited(const Parcel& data)
 	    sendToRILD(request);
 	}
 	break;
-
     case RIL_UNSOL_RESPONSE_CALL_STATE_CHANGED:
-	flags = UM_CALL_STATE_CHANGED;
-	// Invoke RIL_REQUEST_GET_CURRENT_CALLS
-	SLOGD("    Call state changed\n");
 	sendToRILD(new RILRequest(NULL, -1, RIL_REQUEST_GET_CURRENT_CALLS));
 	break;
-
     case RIL_UNSOL_RESPONSE_VOICE_NETWORK_STATE_CHANGED:
-	flags = UM_VOICE_NETWORK_STATE_CHANGED;
-	SLOGD("    Voice network state changed\n");
 	break;
-
     case RIL_UNSOL_NITZ_TIME_RECEIVED:
 	svalue = data.readString16();
-	flags = UM_NITZ_TIME_RECEIVED;
         break;
-
     case RIL_UNSOL_SIGNAL_STRENGTH:
 	ivalue = data.readInt32();
-	flags = UM_SIGNAL_STRENGTH;
 	SLOGD("     Signal strength changed %d\n", ivalue);
 	break;
-
     case RIL_UNSOL_RIL_CONNECTED: {
 	int n = data.readInt32();  // Number of integers
 	ivalue = data.readInt32();  // RIL Version
 	SLOGD("    RIL connected version=%d\n", ivalue);
-    } break;
-
+        break;
+        }
     default:
 	SLOGD("### Unhandled unsolicited message received from RIL: %d\n", message);
 	break;
@@ -265,35 +253,28 @@ void PhoneMachine::receiveUnsolicited(const Parcel& data)
   A solicited message has been received from rild.  Remove the corresponding
   RILRequest from the pending queue and send a response to the appropriate
   client.
-  
-  This function runs in the rild receiving thread.
 */
 
 void PhoneMachine::receiveSolicited(const Parcel& data)
 {
     int serial = data.readInt32();
     int result = data.readInt32();
-
     RILRequest *request = getPending(serial);
 
     if (!request) {
 	SLOGW("receiveSolicited: not requested serial=%d result=%d\n", serial, result);
 	return;
     }
-
     SLOGV("<<< Solicited message=%s [%d] serial=%d result=%d\n", rilMessageStr(request->message()), 
 	   request->message(), serial, result);
-
     int token   = request->token();
     int message = request->message();
     int ivalue  = 0;
     Parcel extra;
-
     switch (message) {
     case RIL_REQUEST_GET_SIM_STATUS: 
 	ivalue = data.readInt32();   // Store the card state
 	break;
-
     case RIL_REQUEST_GET_CURRENT_CALLS: {
 	// We retrieve audio information for the client.
 	// We also update the AudioFlinger audio state appropriately based
@@ -311,51 +292,44 @@ void PhoneMachine::receiveSolicited(const Parcel& data)
 	    else if (call.state == RIL_CALL_ACTIVE || call.state == RIL_CALL_DIALING || call.state == RIL_CALL_ALERTING)
 		audio_mode = AUDIO_MODE_IN_CALL;
 	}
-	
 	SLOGV("    %d calls, audio_mode=%d\n", ivalue, audio_mode);
 	updateAudioMode(audio_mode);
-    }	break;
-
+        break;
+        }
     case RIL_REQUEST_DIAL:
     case RIL_REQUEST_HANGUP:
     case RIL_REQUEST_ANSWER:
     case RIL_REQUEST_UDUB:
     case RIL_REQUEST_SET_MUTE:
 	break;
-
     case RIL_REQUEST_GET_MUTE:
 	ivalue = data.readInt32();
 	break;
-
     case RIL_REQUEST_SIGNAL_STRENGTH:
 	// In actuality, we should probably read all 12 signal strengths
 	ivalue = data.readInt32();
 	break;
-
     case RIL_REQUEST_VOICE_REGISTRATION_STATE:
 	ivalue = data.readInt32();   // Starts with the number of strings
 	for (int i = 0 ; i < ivalue ; i++)
 	    extra.writeString16(data.readString16());
 	break;
-    
     case RIL_REQUEST_OPERATOR: {
 	ivalue = data.readInt32();
 	assert(ivalue == 3);
 	extra.writeString16(data.readString16());
 	extra.writeString16(data.readString16());
 	extra.writeString16(data.readString16());
-    } break;
-
+        break;
+        }
     case RIL_REQUEST_RADIO_POWER:
 	SLOGV("    RIL Radio Power\n");
 	// No response....
 	break;
-
     default:
 	SLOGV("Unhandled RIL request %d\n", message);
 	break;
     }
-
     if (request->client() != NULL) {
 	SLOGV("    Passing solicited message to client token=%d message=%d result=%d ivalue=%d...\n",
 	       token, message, result, ivalue);
@@ -371,7 +345,6 @@ const int RESPONSE_SOLICITED = 0;
 /*
   This thread reads from the RIL daemon and sends messages to 
   appropriate clients.
-
   ### TODO:  If we get a bad read from rild, we should drop this 
          server or log an error or do something suitable
  */
@@ -387,7 +360,6 @@ int PhoneMachine::incomingThread()
 	    perror("PhoneMachine::incomingThread read on header");
 	    return ret;
 	}
-
 	int data_size = ntohl(header);
 	Parcel data;
 	ret = read(mRILfd, data.writeInplace(data_size), data_size);
@@ -395,7 +367,6 @@ int PhoneMachine::incomingThread()
 	    perror("PhoneMachine::incomingThread read on payload");
 	    return ret;
 	}
-
 	if (mDebug & DEBUG_INCOMING) {
 	    SLOGV("<<<<<<< INCOMING <<<<<<<<<<\n");
 	    const uint8_t *ptr = data.data();
@@ -406,12 +377,10 @@ int PhoneMachine::incomingThread()
 	    }
 	    SLOGV("<<<<<<<<<<<<<<<<<<<<<<<<<<<\n");
 	}
-
 	data.setDataPosition(0);
 	int type = data.readInt32();
 //	SLOGV("New message received: %d bytes type=%s\n", data_size, 
 //	       (type ==RESPONSE_SOLICITED ? "solicited" : "unsolicited"));
-
 	if (type == RESPONSE_SOLICITED) 
 	    receiveSolicited(data);
 	else
@@ -438,20 +407,16 @@ void PhoneMachine::Request(const sp<IPhoneClient>& client, int token, int messag
 	request->writeInt(1);
 	request->writeInt(ivalue);   // This is really the GSM index
 	break;
-
     case RIL_REQUEST_SIGNAL_STRENGTH:	       break;
     case RIL_REQUEST_VOICE_REGISTRATION_STATE: break;
     case RIL_REQUEST_OPERATOR:                 break;
     case RIL_REQUEST_ANSWER:                   break;
     case RIL_REQUEST_UDUB:                     break;
-
     case RIL_REQUEST_SET_MUTE:
 	request->writeInt(1);
 	request->writeInt(ivalue ? 1 : 0);
 	break;
-
     case RIL_REQUEST_GET_MUTE:                 break;
-
     default:
 	SLOGW("Unrecognized request %d\n", message);
 	// ### TODO:  Put in an error code here and send the message back
@@ -495,7 +460,6 @@ PhoneMachine::PhoneMachine(PhoneService *service)
     if (AudioSystem::setMasterMute(false) != NO_ERROR)
 	LOG_ALWAYS_FATAL("Unable to write master mute to false\n");
     SLOGV("Audio configured\n");
-    
     if (createThread(beginOutgoingThread, this) == false) 
 	LOG_ALWAYS_FATAL("ERROR!  Unable to create outgoing thread for RILD socket\n");
     if (createThread(beginIncomingThread, this) == false) 
