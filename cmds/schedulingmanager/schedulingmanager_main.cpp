@@ -26,16 +26,12 @@
 #include <utils/Log.h>
 #include <binder/BinderService.h>
 #include <ISchedulingPolicyService.h>
-#include <utils/Singleton.h>
-#include <utils/String16.h>
 
-using namespace android;
-
+namespace android {
 class SchedulingPolicyService : public BinderService<SchedulingPolicyService>,
-    public BnSchedulingPolicyService, public Singleton<SchedulingPolicyService>
+    public BnSchedulingPolicyService
 {
     friend class BinderService<SchedulingPolicyService>;
-
 public:
     static const char *getServiceName() { return "scheduling_policy"; }
     // BnSchedulingPolicyService
@@ -44,14 +40,11 @@ public:
         return true;
     }
 };
+};  // namespace android
 
 int main(int argc, char **argv)
 {
     ALOGI("schedulingmanager starting up");
-    sp<ProcessState> proc(ProcessState::self());
-    SchedulingPolicyService::instantiate();
-    ProcessState::self()->startThreadPool();
-    IPCThreadState::self()->joinThreadPool();
-    ALOGI("schedulingmanager started ok");
+    android::SchedulingPolicyService::publishAndJoinThreadPool();
     return 0;
 }
