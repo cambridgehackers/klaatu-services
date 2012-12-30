@@ -38,7 +38,6 @@
 
 #include <stdio.h>
 #include <binder/BinderService.h>
-#include <utils/Singleton.h>
 #include <powermanager/IPowerManager.h>
 
 namespace android {
@@ -46,49 +45,25 @@ class BnPowerManager : public BnInterface<IPowerManager>
 {
 public:
     virtual status_t onTransact(uint32_t code, const Parcel& data,
-				Parcel* reply, uint32_t flags = 0);
+                                Parcel* reply, uint32_t flags = 0);
+    // Must be kept in sync with frameworks/base/services/powermanager/IPowerManager.cpp
+    enum {
+        ACQUIRE_WAKE_LOCK = IBinder::FIRST_CALL_TRANSACTION,
+        RELEASE_WAKE_LOCK = IBinder::FIRST_CALL_TRANSACTION + 4,
+    };
 };
-
-// Must be kept in sync with frameworks/base/services/powermanager/IPowerManager.cpp
-enum {
-    ACQUIRE_WAKE_LOCK = IBinder::FIRST_CALL_TRANSACTION,
-    RELEASE_WAKE_LOCK = IBinder::FIRST_CALL_TRANSACTION + 4,
-};
-
-status_t BnPowerManager::onTransact( uint32_t code, const Parcel& data, 
-    Parcel* reply, uint32_t flags )
-{
-    switch(code) {
-        case ACQUIRE_WAKE_LOCK: {
-            CHECK_INTERFACE(IPowerManager, data, reply);
-            int32_t flags    = data.readInt32();
-            sp<IBinder> lock = data.readStrongBinder();
-            String16 tag     = data.readString16();
-            return acquireWakeLock(flags, lock, tag);
-            }
-            break;
-        case RELEASE_WAKE_LOCK: {
-            CHECK_INTERFACE(IPowerManager, data, reply);
-            sp<IBinder> lock = data.readStrongBinder();
-            int32_t flags    = data.readInt32();
-            return releaseWakeLock(lock, flags);
-            }
-            break;
-    }
-    return BBinder::onTransact(code, data, reply, flags);
-}
 
 class WakeLockClient
 {
 public:
     WakeLockClient(int flags, const sp<IBinder>& client, const String16& tag, int uid, int pid)
-    : mFlags(flags), mClient(client), mTag(tag), mUid(uid), mPid(pid) {
+        : mFlags(flags), mClient(client), mTag(tag), mUid(uid), mPid(pid) {
         ALOGI("Creating new WakeLockClient flags=%d tag=%s uid=%d pid=%d\n",
-	      mFlags, String8(mTag).string(), mUid, mPid);
+              mFlags, String8(mTag).string(), mUid, mPid);
     }
     ~WakeLockClient() {
         ALOGI("Deleting WakeLockClient flags=%d uid=%d pid=%d tag=%s\n",
-	      mFlags, mUid, mPid, String8(mTag).string());
+              mFlags, mUid, mPid, String8(mTag).string());
     }
     int          mFlags;
     sp<IBinder>  mClient;
@@ -98,80 +73,109 @@ public:
 };
 
 class FakePowerManager : public BinderService<FakePowerManager>,
-    public BnPowerManager, public IBinder::DeathRecipient, public Singleton<FakePowerManager>
+    public BnPowerManager, public IBinder::DeathRecipient
 {
     friend class BinderService<FakePowerManager>;
-
 public:
-    static const char *getServiceName() { return "power"; }
     FakePowerManager() { }
     virtual ~FakePowerManager() { }
+    static const char *getServiceName() { return "power"; }
+
     // IBinder::DeathRecipient
     virtual void binderDied(const wp<IBinder>& who) {
         Mutex::Autolock _l(mLock);
         releaseWakeLockLocked(who, 0, true);
     }
+
     // BnPowerManager
-    // See actual implementation in /frameworks/base/services/java/com/android/server/PowerManagerService.java
-    status_t acquireWakeLock(int flags, const sp<IBinder>& lock, const String16& tag) {
-        int uid = IPCThreadState::self()->getCallingUid();
-        int pid = IPCThreadState::self()->getCallingPid();
-        // Here we may want to check permissions....someday...
-        int64_t token = IPCThreadState::self()->clearCallingIdentity();
-        {
-	    Mutex::Autolock _l(mLock);
-	    acquireWakeLockLocked(flags, lock, uid, pid, tag);
-        }
-        IPCThreadState::self()->restoreCallingIdentity(token);
-        return NO_ERROR;
-    }
-    status_t releaseWakeLock(const sp<IBinder>& lock, int flags) {
-        int uid = IPCThreadState::self()->getCallingUid();
-        // Here we may wish to enfoce permissions - make sure the same guy is releasing the wake lock...
-        Mutex::Autolock _l(mLock);
-        releaseWakeLockLocked(lock, flags, false);
-        lock->unlinkToDeath(this);
-        return NO_ERROR;
-    }
+    status_t acquireWakeLock(int flags, const sp<IBinder>& lock, const String16& tag);
+    status_t releaseWakeLock(const sp<IBinder>& lock, int flags);
 
 private:
-    void acquireWakeLockLocked(int flags, const sp<IBinder>& lock, int uid, int pid, const String16& tag) {
-        ALOGI("acquireWakeLockLocked: flags=%d uid=%d pid=%d tag=%s\n",
-	      flags, uid, pid, String8(tag).string());
-        ssize_t index = mClients.indexOfKey(lock);
-        if (index < 0) {
-            WakeLockClient *client = new WakeLockClient(flags, lock, tag, uid, pid);
-            // Deleted a bunch of code to set minState for screen here..
-            mClients.add(lock, client);
-        }
-        // Deleted a check for isScreenLock and PARTIAL_WAKE_LOCK
-        // There is a bunc of original code that actually grabs wakelocks
-        // Deleted some code that eventually talks to BatteryStats
-    }
-
-    void releaseWakeLockLocked(const wp<IBinder>& lock, int flags, bool death) {
-        ALOGI("releaseWakeLockLocked: flags=%d death=%d\n", flags, death);
-        WakeLockClient *client = mClients.valueFor(lock);
-        mClients.removeItem(lock);
-        if (!client)
-            return;
-        // Deleted code to actually release power state and the underlying wakelocks
-        delete client;
-    }
-
-private:
+    void acquireWakeLockLocked(int flags, const sp<IBinder>& lock, int uid, int pid, const String16& tag);
+    void releaseWakeLockLocked(const wp<IBinder>& lock, int flags, bool death);
     mutable Mutex mLock;
     KeyedVector< wp<IBinder>, WakeLockClient *> mClients;
 };
-ANDROID_SINGLETON_STATIC_INSTANCE(FakePowerManager)
+
+// See actual implementation in /frameworks/base/services/java/com/android/server/PowerManagerService.java
+status_t FakePowerManager::acquireWakeLock(int flags, const sp<IBinder>& lock, const String16& tag)
+{
+    int uid = IPCThreadState::self()->getCallingUid();
+    int pid = IPCThreadState::self()->getCallingPid();
+    // Here we may want to check permissions....someday...
+    int64_t token = IPCThreadState::self()->clearCallingIdentity();
+    {
+        Mutex::Autolock _l(mLock);
+        acquireWakeLockLocked(flags, lock, uid, pid, tag);
+    }
+    IPCThreadState::self()->restoreCallingIdentity(token);
+    return NO_ERROR;
+}
+
+status_t FakePowerManager::releaseWakeLock(const sp<IBinder>& lock, int flags)
+{
+    int uid = IPCThreadState::self()->getCallingUid();
+    // Here we may wish to enfoce permissions - make sure the same guy is releasing the wake lock...
+    Mutex::Autolock _l(mLock);
+    releaseWakeLockLocked(lock, flags, false);
+    lock->unlinkToDeath(this);
+    return NO_ERROR;
+}
+
+void FakePowerManager::acquireWakeLockLocked(int flags, const sp<IBinder>& lock, int uid, int pid, const String16& tag)
+{
+    ALOGI("acquireWakeLockLocked: flags=%d uid=%d pid=%d tag=%s\n",
+          flags, uid, pid, String8(tag).string());
+    ssize_t index = mClients.indexOfKey(lock);
+    if (index < 0) {
+        WakeLockClient *client = new WakeLockClient(flags, lock, tag, uid, pid);
+        // Deleted a bunch of code to set minState for screen here..
+        mClients.add(lock, client);
+    }
+    // Deleted a check for isScreenLock and PARTIAL_WAKE_LOCK
+    // There is a bunc of original code that actually grabs wakelocks
+    // Deleted some code that eventually talks to BatteryStats
+}
+
+void FakePowerManager::releaseWakeLockLocked(const wp<IBinder>& lock, int flags, bool death)
+{
+    ALOGI("releaseWakeLockLocked: flags=%d death=%d\n", flags, death);
+    WakeLockClient *client = mClients.valueFor(lock);
+    mClients.removeItem(lock);
+    if (!client)
+        return;
+    // Deleted code to actually release power state and the underlying wakelocks
+    delete client;
+}
+
+status_t BnPowerManager::onTransact( uint32_t code, const Parcel& data, 
+    Parcel* reply, uint32_t flags )
+{
+    switch(code) {
+    case ACQUIRE_WAKE_LOCK: {
+        CHECK_INTERFACE(IPowerManager, data, reply);
+        int32_t flags    = data.readInt32();
+        sp<IBinder> lock = data.readStrongBinder();
+        String16 tag     = data.readString16();
+        return acquireWakeLock(flags, lock, tag);
+        }
+        break;
+    case RELEASE_WAKE_LOCK: {
+        CHECK_INTERFACE(IPowerManager, data, reply);
+        sp<IBinder> lock = data.readStrongBinder();
+        int32_t flags    = data.readInt32();
+        return releaseWakeLock(lock, flags);
+        }
+        break;
+    }
+    return BBinder::onTransact(code, data, reply, flags);
+}
+
 };  // namespace android
-using namespace android;
 
 int main(int argc, char **argv)
 {
-    sp<ProcessState> proc(ProcessState::self());
-    FakePowerManager::instantiate();
-    ProcessState::self()->startThreadPool();
-    IPCThreadState::self()->joinThreadPool();
+    android::FakePowerManager::publishAndJoinThreadPool();
     return 0;
 }
