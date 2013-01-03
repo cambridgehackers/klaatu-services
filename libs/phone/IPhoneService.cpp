@@ -37,7 +37,7 @@ public:
     }
 };
 
-IMPLEMENT_META_INTERFACE(PhoneService, "nokia.platform.IPhoneService")
+IMPLEMENT_META_INTERFACE(PhoneService, "klaatu.platform.IPhoneService")
 
 // ----------------------------------------------------------------------------
 }; // namespace Android

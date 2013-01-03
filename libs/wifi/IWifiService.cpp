@@ -48,7 +48,7 @@ public:
     }
 };
 
-IMPLEMENT_META_INTERFACE(WifiService, "nokia.platform.IWifiService")
+IMPLEMENT_META_INTERFACE(WifiService, "klaatu.platform.IWifiService")
 
 // ----------------------------------------------------------------------------
 }; // namespace Android
