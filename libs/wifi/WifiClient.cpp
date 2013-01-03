@@ -95,30 +95,6 @@ void WifiClient::binderDied(const wp<IBinder>& who)
     exit(-1);
 }
 
-void WifiClient::State(WifiState state)
-{
-}
-
-void WifiClient::ScanResults(const Vector<ScannedStation>& scandata)
-{
-}
-
-void WifiClient::ConfiguredStations(const Vector<ConfiguredStation>& configdata)
-{
-}
-
-void WifiClient::Information(const WifiInformation& info)
-{
-}
-
-void WifiClient::Rssi(int rssi)
-{
-}
-
-void WifiClient::LinkSpeed(int link_speed)
-{
-}
-
 const char *WifiClient::supStateToString(int state)
 {
     static const char *sStateNames[] = {

@@ -44,12 +44,12 @@ public:
 
     // BnWifiClient
     // The default implementations do nothing; override them in your client
-    virtual void State(WifiState state);
-    virtual void ScanResults(const Vector<ScannedStation>& scandata);
-    virtual void ConfiguredStations(const Vector<ConfiguredStation>& configdata);
-    virtual void Information(const WifiInformation& info);
-    virtual void Rssi(int rssi);
-    virtual void LinkSpeed(int link_speed);
+    virtual void State(WifiState state) {};
+    virtual void ScanResults(const Vector<ScannedStation>& scandata) {};
+    virtual void ConfiguredStations(const Vector<ConfiguredStation>& configdata) {};
+    virtual void Information(const WifiInformation& info) {};
+    virtual void Rssi(int rssi) {};
+    virtual void LinkSpeed(int link_speed) {};
 
     static const char *supStateToString(int state);
 
