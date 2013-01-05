@@ -26,6 +26,8 @@ LOCAL_MODULE_TAGS := optional
 
 include $(BUILD_EXECUTABLE)
 
+ALL_DEFAULT_INSTALLED_MODULES += $(TARGET_OUT)/bin/klaatu_bootanimation
+
 #
 # now compile asset files into .apk for use by test program
 #
