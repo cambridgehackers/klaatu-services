@@ -246,7 +246,7 @@ status_t BootAnimation::readyToRun() {
         return -1;
 
     // create the native surface
-    sp<SurfaceControl> control = session()->createSurface(
+    sp<SurfaceControl> control = session()->createSurface(String8("surface"),
             0, dinfo.w, dinfo.h, PIXEL_FORMAT_RGB_565);
 
     SurfaceComposerClient::openGlobalTransaction();
