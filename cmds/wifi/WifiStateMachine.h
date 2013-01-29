@@ -10,6 +10,12 @@
 
 #include <wifi/IWifiClient.h>
 #include "StateMachine.h"
+#if defined(SHORT_PLATFORM_VERSION) && (SHORT_PLATFORM_VERSION == 40)
+/* Not used before 4.1 */
+#define WIFI_DEVICE_ID
+#else
+#define WIFI_DEVICE_ID 0
+#endif
 
 namespace android {
 class WifiService;

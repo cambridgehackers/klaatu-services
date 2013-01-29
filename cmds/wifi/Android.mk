@@ -12,6 +12,8 @@ LOCAL_MODULE_TAGS:=optional
 
 LOCAL_C_INCLUDES += $(LOCAL_PATH)/../../include external/wpa_supplicant_8
 LOCAL_SHARED_LIBRARIES := libcutils libbinder libutils libklaatu_wifi libhardware libhardware_legacy libnetutils
+SVERSION:=$(subst ., ,$(PLATFORM_VERSION))
+LOCAL_CFLAGS += -DSHORT_PLATFORM_VERSION=$(word 1,$(SVERSION))$(word 2,$(SVERSION))
 
 include $(BUILD_EXECUTABLE)
 

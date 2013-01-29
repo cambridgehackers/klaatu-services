@@ -174,8 +174,13 @@ int WifiStateMachine::request_wifi(int request)
         char dns1[PROPERTY_VALUE_MAX], dns2[PROPERTY_VALUE_MAX];
         char server[PROPERTY_VALUE_MAX], vendorInfo[PROPERTY_VALUE_MAX];
 
-        int result = ::dhcp_do_request(mInterface.string(), ipaddr, gateway,
-            &prefixLength, dns1, dns2, server, &lease, vendorInfo);
+        int result = ::dhcp_do_request( mInterface.string(),
+            ipaddr, gateway, &prefixLength, dns1, dns2, server, &lease
+#if defined(SHORT_PLATFORM_VERSION) && (SHORT_PLATFORM_VERSION == 40)
+#else
+                                                          , vendorInfo
+#endif
+                                                          );
         SLOGD("......dhcp_do_request: result %d\n", result);
         if (result)
             enqueue(DHCP_FAILURE);
@@ -199,16 +204,31 @@ int WifiStateMachine::request_wifi(int request)
     case WIFI_IS_DRIVER_LOADED:
         return is_wifi_driver_loaded();
     case WIFI_START_SUPPLICANT:
-        return wifi_start_supplicant(0);
+        return wifi_start_supplicant(WIFI_DEVICE_ID);
     case WIFI_STOP_SUPPLICANT:
         return wifi_stop_supplicant();
     case WIFI_CONNECT_SUPPLICANT:
-        return wifi_connect_to_supplicant(mInterface.string());
+        return wifi_connect_to_supplicant(
+#if defined(SHORT_PLATFORM_VERSION) && (SHORT_PLATFORM_VERSION == 40)
+#else
+                                          mInterface.string()
+#endif
+                                          );
     case WIFI_CLOSE_SUPPLICANT:
-        wifi_close_supplicant_connection(mInterface.string());
+        wifi_close_supplicant_connection(
+#if defined(SHORT_PLATFORM_VERSION) && (SHORT_PLATFORM_VERSION == 40)
+#else
+                                         mInterface.string()
+#endif
+                                         );
         break;
     case WIFI_WAIT_EVENT:
-        if (wifi_wait_for_event(mInterface.string(), rbuf, sizeof(rbuf)) > 0) {
+        if (wifi_wait_for_event(
+#if defined(SHORT_PLATFORM_VERSION) && (SHORT_PLATFORM_VERSION == 40)
+#else
+                                mInterface.string(), 
+#endif
+                                rbuf, sizeof(rbuf)) > 0) {
             char *buf = rbuf;
             int event = 0, len = 0;
             while (1) {
@@ -302,7 +322,12 @@ String8 WifiStateMachine::doWifiStringCommand(const char *fmt, va_list args)
     int byteCount = vsnprintf(buf, sizeof(buf), fmt, args);
     SLOGV(".....Command: %s\n", buf);
     if (byteCount < 0 || byteCount >= BUF_SIZE
-     || ::wifi_command(mInterface.string(), buf, reply, &reply_len))
+     || ::wifi_command(
+#if defined(SHORT_PLATFORM_VERSION) && (SHORT_PLATFORM_VERSION == 40)
+#else
+                       mInterface.string(), 
+#endif
+                       buf, reply, &reply_len))
         reply_len = 0;
     if (reply_len > 0 && reply[reply_len-1] == '\n')
         reply_len--;
