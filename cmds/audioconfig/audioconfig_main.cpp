@@ -114,10 +114,12 @@ const char *getDeviceName(audio_devices_t device)
 	return DEVICE_OUT_ANLG_DOCK_HEADSET_NAME;
     case AUDIO_DEVICE_OUT_DGTL_DOCK_HEADSET:
 	return DEVICE_OUT_DGTL_DOCK_HEADSET_NAME;
+#if 0 /* not in 4.0.4 */
     case AUDIO_DEVICE_OUT_USB_ACCESSORY:
 	return DEVICE_OUT_USB_ACCESSORY_NAME;
     case AUDIO_DEVICE_OUT_USB_DEVICE:
 	return DEVICE_OUT_USB_DEVICE_NAME;
+#endif
     case AUDIO_DEVICE_IN_DEFAULT:
     default:
 	return "";
@@ -198,7 +200,12 @@ void setStreamVolume(audio_stream_type_t stream, float volume, int output)
 int getStreamVolumeIndex(audio_stream_type_t stream, audio_devices_t device) 
 {
     int value = 0;
-    if (AudioSystem::getStreamVolumeIndex(stream, &value, device) != NO_ERROR)
+    if (AudioSystem::getStreamVolumeIndex(stream, &value
+#if defined(SHORT_PLATFORM_VERSION) && (SHORT_PLATFORM_VERSION == 40)
+#else
+                                                        , device
+#endif
+                                                        ) != NO_ERROR)
 	fprintf(stderr, "Failed to get stream volume index\n");
     return value;
 }
@@ -206,7 +213,12 @@ int getStreamVolumeIndex(audio_stream_type_t stream, audio_devices_t device)
 void setStreamVolumeIndex(audio_stream_type_t stream, int volume, audio_devices_t device)
 {
     printf("Setting stream %d to volume index %d\n", stream, volume);
-    if (AudioSystem::setStreamVolumeIndex(stream, volume, device) != NO_ERROR)
+    if (AudioSystem::setStreamVolumeIndex(stream, volume
+#if defined(SHORT_PLATFORM_VERSION) && (SHORT_PLATFORM_VERSION == 40)
+#else
+                                                        , device
+#endif
+                                                        ) != NO_ERROR)
 	fprintf(stderr, "Failed to set stream volume index\n");
 }
 
@@ -243,7 +255,12 @@ void setDefaults()
 	audio_stream_type_t ast = static_cast<audio_stream_type_t>(i);
 	if (AudioSystem::initStreamVolume(ast, 0, sMaxStreamVolume[i]) != NO_ERROR)
 	    fprintf(stderr, "Failed to init stream %d to max volume index %d\n", i, sMaxStreamVolume[i]);
-	if (AudioSystem::setStreamVolumeIndex(ast, sDefaultStreamVolume[i], AUDIO_DEVICE_OUT_DEFAULT) != NO_ERROR)
+	if (AudioSystem::setStreamVolumeIndex(ast, sDefaultStreamVolume[i]
+#if defined(SHORT_PLATFORM_VERSION) && (SHORT_PLATFORM_VERSION == 40)
+#else
+                                                , AUDIO_DEVICE_OUT_DEFAULT
+#endif
+                                                                          ) != NO_ERROR)
 	    fprintf(stderr, "Failed to set stream %d volume index %d\n", i, sDefaultStreamVolume[i]);
     }
 }
