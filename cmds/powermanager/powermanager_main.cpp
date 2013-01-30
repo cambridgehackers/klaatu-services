@@ -40,6 +40,19 @@
 #include <binder/BinderService.h>
 #include <powermanager/IPowerManager.h>
 
+#ifndef ALOGI_IF /* Names changed in Android 4.1 */
+#define ALOGI_IF LOGI_IF
+#endif
+#ifndef ALOGE_IF /* Names changed in Android 4.1 */
+#define ALOGE_IF LOGE_IF
+#endif
+#ifndef ALOGD /* Names changed in Android 4.1 */
+#define ALOGD LOGD
+#endif
+#ifndef ALOGI /* Names changed in Android 4.1 */
+#define ALOGI LOGI
+#endif
+
 namespace android {
 class BnPowerManager : public BnInterface<IPowerManager>
 {
