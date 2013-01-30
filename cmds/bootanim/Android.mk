@@ -9,7 +9,6 @@ LOCAL_CFLAGS += -DGL_GLEXT_PROTOTYPES -DEGL_EGLEXT_PROTOTYPES
 
 LOCAL_SHARED_LIBRARIES := \
 	libcutils \
-	libandroidfw \
 	libutils \
 	libbinder \
     libui \
@@ -17,6 +16,14 @@ LOCAL_SHARED_LIBRARIES := \
     libEGL \
     libGLESv1_CM \
     libgui
+
+SVERSION:=$(subst ., ,$(PLATFORM_VERSION))
+LOCAL_CFLAGS += -DSHORT_PLATFORM_VERSION=$(word 1,$(SVERSION))$(word 2,$(SVERSION))
+ifneq ($(PLATFORM_VERSION),4.0.0)
+ifneq ($(PLATFORM_VERSION),4.0.4)
+LOCAL_SHARED_LIBRARIES += libandroidfw
+endif
+endif
 
 LOCAL_C_INCLUDES := \
 	$(call include-path-for, corecg graphics)

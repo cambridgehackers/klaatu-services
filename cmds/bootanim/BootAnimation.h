@@ -20,7 +20,11 @@
 #include <stdint.h>
 #include <sys/types.h>
 
+#if defined(SHORT_PLATFORM_VERSION) && (SHORT_PLATFORM_VERSION == 40)
+#include <utils/AssetManager.h>
+#else
 #include <androidfw/AssetManager.h>
+#endif
 #include <utils/threads.h>
 
 #include <EGL/egl.h>
@@ -100,6 +104,16 @@ private:
 };
 
 // ---------------------------------------------------------------------------
+
+#ifndef ALOGI_IF /* Names changed in Android 4.1 */
+#define ALOGI_IF LOGI_IF
+#endif
+#ifndef ALOGE_IF /* Names changed in Android 4.1 */
+#define ALOGE_IF LOGE_IF
+#endif
+#ifndef ALOGD /* Names changed in Android 4.1 */
+#define ALOGD LOGD
+#endif
 
 }; // namespace android
 

@@ -25,7 +25,6 @@
 
 #include <cutils/properties.h>
 
-#include <androidfw/AssetManager.h>
 #include <binder/IPCThreadState.h>
 #include <utils/Atomic.h>
 #include <utils/Errors.h>
@@ -38,8 +37,15 @@
 #include <ui/DisplayInfo.h>
 #include <ui/FramebufferNativeWindow.h>
 
+#if defined(SHORT_PLATFORM_VERSION) && (SHORT_PLATFORM_VERSION == 40)
+#include <surfaceflinger/Surface.h>
+#include <surfaceflinger/SurfaceComposerClient.h>
+#include <utils/ResourceTypes.h>
+#else
 #include <gui/Surface.h>
 #include <gui/SurfaceComposerClient.h>
+#include <androidfw/ResourceTypes.h>
+#endif
 
 #include <core/SkBitmap.h>
 #include <core/SkStream.h>
@@ -48,8 +54,6 @@
 #include <GLES/gl.h>
 #include <GLES/glext.h>
 #include <EGL/eglext.h>
-
-#include <androidfw/ResourceTypes.h>
 
 #include "BootAnimation.h"
 
@@ -246,7 +250,7 @@ status_t BootAnimation::readyToRun() {
         return -1;
 
     // create the native surface
-    sp<SurfaceControl> control = session()->createSurface(String8("surface"),
+    sp<SurfaceControl> control = session()->createSurface(
             0, dinfo.w, dinfo.h, PIXEL_FORMAT_RGB_565);
 
     SurfaceComposerClient::openGlobalTransaction();
