@@ -27,6 +27,25 @@
 #include "InputReader.h"
 #include <cutils/log.h>
 
+#ifndef ALOGI_IF /* Names changed in Android 4.1 */
+#define ALOGI_IF LOGI_IF
+#endif
+#ifndef ALOGE_IF /* Names changed in Android 4.1 */
+#define ALOGE_IF LOGE_IF
+#endif
+#ifndef ALOGD /* Names changed in Android 4.1 */
+#define ALOGD LOGD
+#endif
+#ifndef ALOGI /* Names changed in Android 4.1 */
+#define ALOGI LOGI
+#endif
+#ifndef ALOGE /* Names changed in Android 4.1 */
+#define ALOGE LOGE
+#endif
+#ifndef ALOGW /* Names changed in Android 4.1 */
+#define ALOGW LOGW
+#endif
+
 namespace android {
 class KlaatuInputListener: public InputListenerInterface {
     void notifyConfigurationChanged(const NotifyConfigurationChangedArgs* args)
@@ -68,16 +87,22 @@ class KlaatuReaderPolicy: public InputReaderPolicyInterface {
         printf("[%s:%d] '%s'\n", __FUNCTION__, __LINE__, identifier.name.string());
         return String8("foo");
     }
+#if defined(SHORT_PLATFORM_VERSION) && (SHORT_PLATFORM_VERSION == 40)
+#else
     sp<KeyCharacterMap> getKeyboardLayoutOverlay(const String8& inputDeviceDescriptor)
     {
         printf("[%s:%d] '%s'\n", __FUNCTION__, __LINE__, inputDeviceDescriptor.string());
         return NULL;
     }
+#endif
     void notifyInputDevicesChanged(const Vector<InputDeviceInfo>& inputDevices)
     {
         printf("[%s:%d]\n", __FUNCTION__, __LINE__);
+#if defined(SHORT_PLATFORM_VERSION) && (SHORT_PLATFORM_VERSION == 40)
+#else
         for (unsigned int i = 0; i < inputDevices.size(); i++)
             printf("name %s\n", inputDevices[i].getIdentifier().name.string());
+#endif
     }
 };
 
