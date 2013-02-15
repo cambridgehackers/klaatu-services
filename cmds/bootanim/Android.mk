@@ -11,11 +11,11 @@ LOCAL_SHARED_LIBRARIES := \
 	libcutils \
 	libutils \
 	libbinder \
-    libui \
+	libui \
 	libskia \
-    libEGL \
-    libGLESv1_CM \
-    libgui
+	libEGL \
+	libGLESv1_CM \
+	libgui
 
 SVERSION:=$(subst ., ,$(PLATFORM_VERSION))
 LOCAL_CFLAGS += -DSHORT_PLATFORM_VERSION=$(word 1,$(SVERSION))$(word 2,$(SVERSION))
