@@ -20,7 +20,7 @@
 #include <stdint.h>
 #include <sys/types.h>
 
-#if defined(SHORT_PLATFORM_VERSION) && (SHORT_PLATFORM_VERSION == 40)
+#if defined(SHORT_PLATFORM_VERSION) && (SHORT_PLATFORM_VERSION <= 40)
 #include <utils/AssetManager.h>
 #else
 #include <androidfw/AssetManager.h>

@@ -37,7 +37,7 @@
 #include <ui/DisplayInfo.h>
 #include <ui/FramebufferNativeWindow.h>
 
-#if defined(SHORT_PLATFORM_VERSION) && (SHORT_PLATFORM_VERSION == 40)
+#if defined(SHORT_PLATFORM_VERSION) && (SHORT_PLATFORM_VERSION <= 40)
 #include <surfaceflinger/Surface.h>
 #include <surfaceflinger/SurfaceComposerClient.h>
 #include <utils/ResourceTypes.h>
@@ -253,6 +253,8 @@ status_t BootAnimation::readyToRun() {
     sp<SurfaceControl> control = session()->createSurface(
 #if defined(SHORT_PLATFORM_VERSION) && (SHORT_PLATFORM_VERSION == 42)
             String8("animation"),
+#elif defined(SHORT_PLATFORM_VERSION) && (SHORT_PLATFORM_VERSION == 23)
+            0, String8("animation"), 0,
 #else
             0,
 #endif

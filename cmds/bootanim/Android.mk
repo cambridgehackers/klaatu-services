@@ -21,7 +21,11 @@ SVERSION:=$(subst ., ,$(PLATFORM_VERSION))
 LOCAL_CFLAGS += -DSHORT_PLATFORM_VERSION=$(word 1,$(SVERSION))$(word 2,$(SVERSION))
 ifneq ($(PLATFORM_VERSION),4.0.0)
 ifneq ($(PLATFORM_VERSION),4.0.4)
+ifeq ($(PLATFORM_VERSION),2.3.7)
+LOCAL_SHARED_LIBRARIES += libsurfaceflinger_client
+else
 LOCAL_SHARED_LIBRARIES += libandroidfw
+endif
 endif
 endif
 
