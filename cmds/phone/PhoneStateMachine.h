@@ -7,6 +7,9 @@
 
 #include <utils/List.h>
 #include <media/AudioSystem.h>
+#if defined(SHORT_PLATFORM_VERSION) && (SHORT_PLATFORM_VERSION == 23)
+typedef audio_mode_e audio_mode_t;
+#endif
 
 namespace android {
 class RILRequest;

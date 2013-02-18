@@ -9,6 +9,8 @@ LOCAL_MODULE_TAGS:=optional
 
 LOCAL_C_INCLUDES += $(LOCAL_PATH)/../../include
 LOCAL_SHARED_LIBRARIES := libcutils libbinder libutils libklaatu_phone libmedia
+SVERSION:=$(subst ., ,$(PLATFORM_VERSION))
+LOCAL_CFLAGS += -DSHORT_PLATFORM_VERSION=$(word 1,$(SVERSION))$(word 2,$(SVERSION))
 
 include $(BUILD_EXECUTABLE)
 

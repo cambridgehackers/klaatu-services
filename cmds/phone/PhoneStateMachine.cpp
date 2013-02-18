@@ -195,7 +195,10 @@ typedef struct {
 static MAPTYPE eventmap[] = {
     {RIL_UNSOL_RESPONSE_RADIO_STATE_CHANGED, UM_RADIO_STATE_CHANGED},
     {RIL_UNSOL_RESPONSE_CALL_STATE_CHANGED, UM_CALL_STATE_CHANGED},
+#if defined(SHORT_PLATFORM_VERSION) && (SHORT_PLATFORM_VERSION == 23)
+#else
     {RIL_UNSOL_RESPONSE_VOICE_NETWORK_STATE_CHANGED, UM_VOICE_NETWORK_STATE_CHANGED},
+#endif
     {RIL_UNSOL_NITZ_TIME_RECEIVED, UM_NITZ_TIME_RECEIVED},
     {RIL_UNSOL_SIGNAL_STRENGTH, UM_SIGNAL_STRENGTH}, {0,UM_NONE}};
 
@@ -226,8 +229,6 @@ void PhoneMachine::receiveUnsolicited(const Parcel& data)
     case RIL_UNSOL_RESPONSE_CALL_STATE_CHANGED:
 	sendToRILD(new RILRequest(NULL, -1, RIL_REQUEST_GET_CURRENT_CALLS));
 	break;
-    case RIL_UNSOL_RESPONSE_VOICE_NETWORK_STATE_CHANGED:
-	break;
     case RIL_UNSOL_NITZ_TIME_RECEIVED:
 	svalue = data.readString16();
         break;
@@ -235,12 +236,17 @@ void PhoneMachine::receiveUnsolicited(const Parcel& data)
 	ivalue = data.readInt32();
 	SLOGD("     Signal strength changed %d\n", ivalue);
 	break;
+#if defined(SHORT_PLATFORM_VERSION) && (SHORT_PLATFORM_VERSION == 23)
+#else
+    case RIL_UNSOL_RESPONSE_VOICE_NETWORK_STATE_CHANGED:
+	break;
     case RIL_UNSOL_RIL_CONNECTED: {
 	int n = data.readInt32();  // Number of integers
 	ivalue = data.readInt32();  // RIL Version
 	SLOGD("    RIL connected version=%d\n", ivalue);
         break;
         }
+#endif
     default:
 	SLOGD("### Unhandled unsolicited message received from RIL: %d\n", message);
 	break;
@@ -309,11 +315,14 @@ void PhoneMachine::receiveSolicited(const Parcel& data)
 	// In actuality, we should probably read all 12 signal strengths
 	ivalue = data.readInt32();
 	break;
+#if defined(SHORT_PLATFORM_VERSION) && (SHORT_PLATFORM_VERSION == 23)
+#else
     case RIL_REQUEST_VOICE_REGISTRATION_STATE:
 	ivalue = data.readInt32();   // Starts with the number of strings
 	for (int i = 0 ; i < ivalue ; i++)
 	    extra.writeString16(data.readString16());
 	break;
+#endif
     case RIL_REQUEST_OPERATOR: {
 	ivalue = data.readInt32();
 	assert(ivalue == 3);
@@ -408,7 +417,10 @@ void PhoneMachine::Request(const sp<IPhoneClient>& client, int token, int messag
 	request->writeInt(ivalue);   // This is really the GSM index
 	break;
     case RIL_REQUEST_SIGNAL_STRENGTH:	       break;
+#if defined(SHORT_PLATFORM_VERSION) && (SHORT_PLATFORM_VERSION == 23)
+#else
     case RIL_REQUEST_VOICE_REGISTRATION_STATE: break;
+#endif
     case RIL_REQUEST_OPERATOR:                 break;
     case RIL_REQUEST_ANSWER:                   break;
     case RIL_REQUEST_UDUB:                     break;
