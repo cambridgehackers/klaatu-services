@@ -92,7 +92,10 @@ void PhoneClient::Answer(int token)
 void PhoneClient::VoiceRegistrationState(int token)
 {
     mPending.push(token);
+#if defined(SHORT_PLATFORM_VERSION) && (SHORT_PLATFORM_VERSION == 23)
+#else
     mPhoneService->Request(this, token, RIL_REQUEST_VOICE_REGISTRATION_STATE, 0, String16());
+#endif
 }
 
 void PhoneClient::Register(UnsolicitedMessages flags)
@@ -168,12 +171,15 @@ void PhoneClient::Response(int token, int message, int result, int ivalue, const
 	ResponseSignalStrength(token, result, ivalue);
 	break;
 
+#if defined(SHORT_PLATFORM_VERSION) && (SHORT_PLATFORM_VERSION == 23)
+#else
     case RIL_REQUEST_VOICE_REGISTRATION_STATE: {
 	List<String16> strlist;
 	for (int i = 0 ; i < ivalue ; i++)
 	    strlist.push_back(extra.readString16());
 	ResponseVoiceRegistrationState(token, result, strlist);
     } break;
+#endif
 
     case RIL_REQUEST_OPERATOR: {
 	String16 longONS  = extra.readString16();
@@ -207,9 +213,12 @@ void PhoneClient::Unsolicited(int message, int ivalue, const String16& svalue)
 	UnsolicitedCallStateChanged();
 	break;
 
+#if defined(SHORT_PLATFORM_VERSION) && (SHORT_PLATFORM_VERSION == 23)
+#else
     case RIL_UNSOL_RESPONSE_VOICE_NETWORK_STATE_CHANGED:
 	UnsolicitedVoiceNetworkStateChanged();
 	break;
+#endif
 
     case RIL_UNSOL_NITZ_TIME_RECEIVED:
 	UnsolicitedNITZTimeReceived(svalue);

@@ -14,6 +14,11 @@ LOCAL_MODULE:= libklaatu_phone
 LOCAL_MODULE_TAGS:=optional
 
 LOCAL_C_INCLUDES += $(LOCAL_PATH)/../../include
+SVERSION:=$(subst ., ,$(PLATFORM_VERSION))
+LOCAL_CFLAGS += -DSHORT_PLATFORM_VERSION=$(word 1,$(SVERSION))$(word 2,$(SVERSION))
+ifeq ($(PLATFORM_VERSION),2.3.7)
+LOCAL_PRELINK_MODULE := false
+endif
 
 include $(BUILD_SHARED_LIBRARY)
 
