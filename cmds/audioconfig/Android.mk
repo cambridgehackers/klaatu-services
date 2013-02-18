@@ -1,3 +1,5 @@
+ifneq ($(PLATFORM_VERSION),2.3.7)
+
 LOCAL_PATH:= $(call my-dir)
 include $(CLEAR_VARS)
 
@@ -18,3 +20,4 @@ include $(BUILD_EXECUTABLE)
 
 ALL_DEFAULT_INSTALLED_MODULES += $(TARGET_OUT)/bin/klaatu_audioconfig
 
+endif
