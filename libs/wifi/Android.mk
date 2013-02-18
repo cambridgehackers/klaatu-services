@@ -14,6 +14,9 @@ LOCAL_MODULE:= libklaatu_wifi
 LOCAL_MODULE_TAGS:=optional
 
 LOCAL_C_INCLUDES += $(LOCAL_PATH)/../../include
+ifeq ($(PLATFORM_VERSION),2.3.7)
+LOCAL_PRELINK_MODULE := false
+endif
 
 include $(BUILD_SHARED_LIBRARY)
 
