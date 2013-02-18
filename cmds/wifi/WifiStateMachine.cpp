@@ -12,7 +12,17 @@
 #include <cutils/properties.h>
 #include <cutils/sockets.h>
 #include <hardware_legacy/wifi.h>
+#if defined(SHORT_PLATFORM_VERSION) && (SHORT_PLATFORM_VERSION == 23)
+#include <arpa/inet.h>
+extern "C" {
+int dhcp_do_request(const char *ifname, in_addr_t *ipaddr, in_addr_t *gateway,
+     in_addr_t *mask, in_addr_t *dns1, in_addr_t *dns2, in_addr_t *server,
+     uint32_t  *lease);
+int dhcp_stop(const char *ifname);
+};
+#else
 #include <netutils/dhcp.h>
+#endif
 #include <utils/String8.h>
 #define BIT(x) (1 << (x))      /* needed for wpa supplicant defs.h */
 #include <src/common/defs.h>   /* WPA_xxx names from external/wpa_supplicant_x */
@@ -174,6 +184,19 @@ int WifiStateMachine::request_wifi(int request)
         char dns1[PROPERTY_VALUE_MAX], dns2[PROPERTY_VALUE_MAX];
         char server[PROPERTY_VALUE_MAX], vendorInfo[PROPERTY_VALUE_MAX];
 
+#if defined(SHORT_PLATFORM_VERSION) && (SHORT_PLATFORM_VERSION == 23)
+        struct in_addr tt;
+        in_addr_t t_ipaddr, t_gateway, t_dns1, t_dns2, t_server;
+        int result = ::dhcp_do_request( mInterface.string(),
+            &t_ipaddr, &t_gateway, &prefixLength, &t_dns1, &t_dns2, &t_server, &lease);
+#define CPY(A) tt.s_addr = t_ ## A; strcpy(A, inet_ntoa(tt));
+        CPY(ipaddr)
+        CPY(gateway)
+        CPY(dns1)
+        CPY(dns2)
+        CPY(server)
+#undef CPY
+#else
         int result = ::dhcp_do_request( mInterface.string(),
             ipaddr, gateway, &prefixLength, dns1, dns2, server, &lease
 #if defined(SHORT_PLATFORM_VERSION) && (SHORT_PLATFORM_VERSION == 40)
@@ -181,6 +204,7 @@ int WifiStateMachine::request_wifi(int request)
                                                           , vendorInfo
 #endif
                                                           );
+#endif
         SLOGD("......dhcp_do_request: result %d\n", result);
         if (result)
             enqueue(DHCP_FAILURE);
@@ -202,21 +226,25 @@ int WifiStateMachine::request_wifi(int request)
         enqueue(!ret ? CMD_UNLOAD_DRIVER_SUCCESS : CMD_UNLOAD_DRIVER_FAILURE);
         break;
     case WIFI_IS_DRIVER_LOADED:
+#if defined(SHORT_PLATFORM_VERSION) && (SHORT_PLATFORM_VERSION == 23)
+        return false;
+#else
         return is_wifi_driver_loaded();
+#endif
     case WIFI_START_SUPPLICANT:
         return wifi_start_supplicant(WIFI_DEVICE_ID);
     case WIFI_STOP_SUPPLICANT:
         return wifi_stop_supplicant();
     case WIFI_CONNECT_SUPPLICANT:
         return wifi_connect_to_supplicant(
-#if defined(SHORT_PLATFORM_VERSION) && (SHORT_PLATFORM_VERSION == 40)
+#if defined(SHORT_PLATFORM_VERSION) && (SHORT_PLATFORM_VERSION <= 40)
 #else
                                           mInterface.string()
 #endif
                                           );
     case WIFI_CLOSE_SUPPLICANT:
         wifi_close_supplicant_connection(
-#if defined(SHORT_PLATFORM_VERSION) && (SHORT_PLATFORM_VERSION == 40)
+#if defined(SHORT_PLATFORM_VERSION) && (SHORT_PLATFORM_VERSION <= 40)
 #else
                                          mInterface.string()
 #endif
@@ -224,7 +252,7 @@ int WifiStateMachine::request_wifi(int request)
         break;
     case WIFI_WAIT_EVENT:
         if (wifi_wait_for_event(
-#if defined(SHORT_PLATFORM_VERSION) && (SHORT_PLATFORM_VERSION == 40)
+#if defined(SHORT_PLATFORM_VERSION) && (SHORT_PLATFORM_VERSION <= 40)
 #else
                                 mInterface.string(), 
 #endif
@@ -323,7 +351,7 @@ String8 WifiStateMachine::doWifiStringCommand(const char *fmt, va_list args)
     SLOGV(".....Command: %s\n", buf);
     if (byteCount < 0 || byteCount >= BUF_SIZE
      || ::wifi_command(
-#if defined(SHORT_PLATFORM_VERSION) && (SHORT_PLATFORM_VERSION == 40)
+#if defined(SHORT_PLATFORM_VERSION) && (SHORT_PLATFORM_VERSION <= 40)
 #else
                        mInterface.string(), 
 #endif
@@ -525,7 +553,10 @@ void WifiStateMachine::disable_interface(void)
     mWifiInformation.bssid = "";
     mWifiInformation.ssid = "";
     mWifiInformation.network_id = -1;
+#if defined(SHORT_PLATFORM_VERSION) && (SHORT_PLATFORM_VERSION == 23)
+#else
     mWifiInformation.supplicant_state = WPA_INTERFACE_DISABLED;
+#endif
     mWifiInformation.rssi = -9999;
     mWifiInformation.link_speed = -1;
     mService->BroadcastInformation(mWifiInformation);
@@ -613,8 +644,12 @@ void WifiStateMachine::Register(const sp<IWifiClient>& client, int flags)
 static bool isConnecting(int state)
 {
     switch (state) {
-    case WPA_ASSOCIATING: case WPA_AUTHENTICATING: case WPA_ASSOCIATED:
+    case WPA_ASSOCIATING: case WPA_ASSOCIATED:
     case WPA_4WAY_HANDSHAKE: case WPA_GROUP_HANDSHAKE: case WPA_COMPLETED:
+#if defined(SHORT_PLATFORM_VERSION) && (SHORT_PLATFORM_VERSION == 23)
+#else
+    case WPA_AUTHENTICATING: 
+#endif
         return true;
     }
     return false;
@@ -969,7 +1004,10 @@ stateprocess_t WifiStateMachine::invoke_process(int state, Message *message)
                         ssid = elements[3];
                 }
                 ssid = trimString(ssid);
+#if defined(SHORT_PLATFORM_VERSION) && (SHORT_PLATFORM_VERSION == 23)
+#else
                 if (!ssid.isEmpty())
+#endif
                     mStations.push(ScannedStation(elements[0], ssid, flags, frequency, rssi));
             }
         }
@@ -1000,7 +1038,12 @@ stateprocess_t WifiStateMachine::invoke_process(int state, Message *message)
                 }
             }
             String8 s = doWifiStringCommand("ADD_NETWORK");
-            if (s.isEmpty() || !isdigit(s.string()[0])) {
+            if (
+#if defined(SHORT_PLATFORM_VERSION) && (SHORT_PLATFORM_VERSION == 23)
+#else
+                s.isEmpty() ||
+#endif
+                !isdigit(s.string()[0])) {
                 SLOGW("......addOrUpdate: Failed to add a network [%s]\n", s.string());
                 break;
             }
@@ -1011,9 +1054,18 @@ stateprocess_t WifiStateMachine::invoke_process(int state, Message *message)
         // ****************************************
         // Configure the SSID, Key management, Pre-shared key, Priority
         if ((!doWifiBooleanCommand("SET_NETWORK %d ssid \"%s\"", network_id, cs.ssid.string())
-         || (!cs.key_mgmt.isEmpty()
-             && !doWifiBooleanCommand("SET_NETWORK %d key_mgmt %s", network_id, cs.key_mgmt.string()))
-         || (!cs.pre_shared_key.isEmpty() && cs.pre_shared_key != "*"
+         || (
+#if defined(SHORT_PLATFORM_VERSION) && (SHORT_PLATFORM_VERSION == 23)
+#else
+             !cs.key_mgmt.isEmpty() &&
+#endif
+             !doWifiBooleanCommand("SET_NETWORK %d key_mgmt %s", network_id, cs.key_mgmt.string()))
+         || (
+#if defined(SHORT_PLATFORM_VERSION) && (SHORT_PLATFORM_VERSION == 23)
+#else
+             !cs.pre_shared_key.isEmpty() &&
+#endif
+             cs.pre_shared_key != "*"
              && !doWifiBooleanCommand("SET_NETWORK %d psk \"%s\"", network_id, cs.pre_shared_key.string()))
          || !doWifiBooleanCommand("SET_NETWORK %d priority %d", network_id, cs.priority))
          && cs.network_id == -1) {  // We were adding a new station
