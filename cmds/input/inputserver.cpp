@@ -23,8 +23,15 @@
 #define LOG_TAG "InputManager"
 //#define LOG_NDEBUG 0
 
+#if defined(SHORT_PLATFORM_VERSION) && (SHORT_PLATFORM_VERSION == 23)
+#include "ui/EventHub.h"
+#include "ui/InputReader.h"
+#define DISPATCH_CLASS InputDispatcherInterface
+#else
 #include "EventHub.h"
 #include "InputReader.h"
+#define DISPATCH_CLASS InputListenerInterface
+#endif
 #include <cutils/log.h>
 
 #ifndef ALOGI_IF /* Names changed in Android 4.1 */
@@ -47,7 +54,60 @@
 #endif
 
 namespace android {
-class KlaatuInputListener: public InputListenerInterface {
+class KlaatuInputListener: public DISPATCH_CLASS {
+#if defined(SHORT_PLATFORM_VERSION) && (SHORT_PLATFORM_VERSION == 23)
+    void dump(String8&)
+    {
+        printf("[%s:%d]\n", __FUNCTION__, __LINE__);
+    }
+    void dispatchOnce()
+    {
+        printf("[%s:%d]\n", __FUNCTION__, __LINE__);
+    }
+    int32_t injectInputEvent(const InputEvent*, int32_t, int32_t, int32_t, int32_t)
+    {
+        printf("[%s:%d]\n", __FUNCTION__, __LINE__);
+        return 0;
+    }
+    void setInputWindows(const Vector<InputWindow>&)
+    {
+        printf("[%s:%d]\n", __FUNCTION__, __LINE__);
+    }
+    void setFocusedApplication(const InputApplication*)
+    {
+        printf("[%s:%d]\n", __FUNCTION__, __LINE__);
+    }
+    void setInputDispatchMode(bool, bool)
+    {
+        printf("[%s:%d]\n", __FUNCTION__, __LINE__);
+    }
+    status_t registerInputChannel(const sp<InputChannel>&, bool)
+    {
+        printf("[%s:%d]\n", __FUNCTION__, __LINE__);
+        return 0;
+    }
+    status_t unregisterInputChannel(const sp<InputChannel>&)
+    {
+        printf("[%s:%d]\n", __FUNCTION__, __LINE__);
+        return 0;
+    }
+    void notifyConfigurationChanged(nsecs_t)
+    {
+        printf("[%s:%d]\n", __FUNCTION__, __LINE__);
+    }
+    void notifyKey(nsecs_t, int32_t, int32_t, uint32_t, int32_t, int32_t, int32_t, int32_t, int32_t, nsecs_t)
+    {
+        printf("[%s:%d]\n", __FUNCTION__, __LINE__);
+    }
+    void notifyMotion(nsecs_t, int32_t, int32_t, uint32_t, int32_t, int32_t, int32_t, int32_t, uint32_t, const int32_t*, const PointerCoords*, float, float, nsecs_t)
+    {
+        printf("[%s:%d]\n", __FUNCTION__, __LINE__);
+    }
+    void notifySwitch(nsecs_t, int32_t, int32_t, uint32_t)
+    {
+        printf("[%s:%d]\n", __FUNCTION__, __LINE__);
+    }
+#else
     void notifyConfigurationChanged(const NotifyConfigurationChangedArgs* args)
     {
         printf("[%s:%d]\n", __FUNCTION__, __LINE__);
@@ -69,9 +129,44 @@ class KlaatuInputListener: public InputListenerInterface {
     {
         printf("[%s:%d]\n", __FUNCTION__, __LINE__);
     }
+#endif // not 2.3
 };
 
 class KlaatuReaderPolicy: public InputReaderPolicyInterface {
+#if defined(SHORT_PLATFORM_VERSION) && (SHORT_PLATFORM_VERSION == 23)
+    bool getDisplayInfo(int32_t, int32_t*, int32_t*, int32_t*)
+    {
+        printf("[%s:%d]\n", __FUNCTION__, __LINE__);
+        return true;
+    }
+    bool filterTouchEvents()
+    {
+        printf("[%s:%d]\n", __FUNCTION__, __LINE__);
+        return true;
+    }
+    bool filterJumpyTouchEvents()
+    {
+        printf("[%s:%d]\n", __FUNCTION__, __LINE__);
+        return true;
+    }
+    nsecs_t getVirtualKeyQuietTime()
+    {
+        printf("[%s:%d]\n", __FUNCTION__, __LINE__);
+        return 0;
+    }
+    void getVirtualKeyDefinitions(const String8&, Vector<VirtualKeyDefinition>&)
+    {
+        printf("[%s:%d]\n", __FUNCTION__, __LINE__);
+    }
+    void getInputDeviceCalibration(const String8&, InputDeviceCalibration&)
+    {
+        printf("[%s:%d]\n", __FUNCTION__, __LINE__);
+    }
+    void getExcludedDeviceNames(Vector<String8>&)
+    {
+        printf("[%s:%d]\n", __FUNCTION__, __LINE__);
+    }
+#else
     void getReaderConfiguration(InputReaderConfiguration* outConfig)
     {
         printf("[%s:%d]\n", __FUNCTION__, __LINE__);
@@ -109,6 +204,7 @@ static DisplayViewport vport;
             printf("name %s\n", inputDevices[i].getIdentifier().name.string());
 #endif
     }
+#endif // not 2.3
 };
 
 } // namespace android

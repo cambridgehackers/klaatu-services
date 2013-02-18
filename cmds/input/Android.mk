@@ -7,7 +7,12 @@ LOCAL_MODULE:= klaatu_inputserver
 LOCAL_MODULE_TAGS:=optional
 LOCAL_C_INCLUDES := frameworks/base/services/input \
 	external/skia/include/core
-LOCAL_SHARED_LIBRARIES := libinput libcutils libutils
+LOCAL_SHARED_LIBRARIES := libcutils libutils
+ifeq ($(PLATFORM_VERSION),2.3.7)
+LOCAL_SHARED_LIBRARIES += libui
+else
+LOCAL_SHARED_LIBRARIES += libinput
+endif
 SVERSION:=$(subst ., ,$(PLATFORM_VERSION))
 LOCAL_CFLAGS += -DSHORT_PLATFORM_VERSION=$(word 1,$(SVERSION))$(word 2,$(SVERSION))
 
