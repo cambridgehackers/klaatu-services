@@ -10,7 +10,11 @@ LOCAL_SRC_FILES:= \
 LOCAL_MODULE:= klaatu_wifiservice
 LOCAL_MODULE_TAGS:=optional
 
+ifeq ($(PLATFORM_VERSION),2.3.7)
+LOCAL_C_INCLUDES += $(LOCAL_PATH)/../../include external/wpa_supplicant_6/wpa_supplicant
+else
 LOCAL_C_INCLUDES += $(LOCAL_PATH)/../../include external/wpa_supplicant_8
+endif
 LOCAL_SHARED_LIBRARIES := libcutils libbinder libutils libklaatu_wifi libhardware libhardware_legacy libnetutils
 SVERSION:=$(subst ., ,$(PLATFORM_VERSION))
 LOCAL_CFLAGS += -DSHORT_PLATFORM_VERSION=$(word 1,$(SVERSION))$(word 2,$(SVERSION))
