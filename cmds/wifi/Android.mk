@@ -18,6 +18,11 @@ endif
 LOCAL_SHARED_LIBRARIES := libcutils libbinder libutils libklaatu_wifi libhardware libhardware_legacy libnetutils
 SVERSION:=$(subst ., ,$(PLATFORM_VERSION))
 LOCAL_CFLAGS += -DSHORT_PLATFORM_VERSION=$(word 1,$(SVERSION))$(word 2,$(SVERSION))
+ifeq ($(word 3,$(SVERSION)),)
+LOCAL_CFLAGS += -DLONG_PLATFORM_VERSION=$(word 1,$(SVERSION))$(word 2,$(SVERSION))0
+else
+LOCAL_CFLAGS += -DLONG_PLATFORM_VERSION=$(word 1,$(SVERSION))$(word 2,$(SVERSION))$(word 3,$(SVERSION))
+endif
 
 include $(BUILD_EXECUTABLE)
 

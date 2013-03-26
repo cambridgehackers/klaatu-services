@@ -234,7 +234,11 @@ int WifiStateMachine::request_wifi(int request)
     case WIFI_START_SUPPLICANT:
         return wifi_start_supplicant(WIFI_DEVICE_ID);
     case WIFI_STOP_SUPPLICANT:
+#if defined(LONG_PLATFORM_VERSION) && (LONG_PLATFORM_VERSION > 421)
+        return wifi_stop_supplicant(WIFI_DEVICE_ID);
+#else
         return wifi_stop_supplicant();
+#endif
     case WIFI_CONNECT_SUPPLICANT:
         return wifi_connect_to_supplicant(
 #if defined(SHORT_PLATFORM_VERSION) && (SHORT_PLATFORM_VERSION <= 40)
