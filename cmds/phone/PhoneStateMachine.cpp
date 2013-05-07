@@ -13,6 +13,7 @@
 #include <cutils/sockets.h>
 #include <arpa/inet.h>
 #include <telephony/ril.h>
+#include <cutils/properties.h>
 
 namespace android {
 
@@ -360,6 +361,24 @@ const int RESPONSE_SOLICITED = 0;
 
 int PhoneMachine::incomingThread()
 {
+	char boardname[PROPERTY_VALUE_MAX];
+	if (property_get("ro.product.board", boardname, "") > 0) {
+		SLOGV("%s: -------------Board %s -----------------\n", __FUNCTION__, boardname);
+		// QCOM Version 4.1.2 onwards, supports multiple clients and needs a SUB1/2 string to
+		// identify client
+		// For this example code we will just use "SUB1" for client 0
+		if ( !strcasecmp(boardname, "msm8960")) {
+			char *sub = "SUB1";
+			int ret = ::send(mRILfd, sub, sizeof(sub), 0);
+			if (ret != (int) sizeof(sub)) {
+	    		perror("Socket write error when sending parcel"); 
+	    		return ret;
+			}
+			SLOGV("%s: sent SUB1\n", __FUNCTION__);
+		}
+	}
+	else SLOGE("%s: could not get device name\n", __FUNCTION__);
+
     while (1) {
 	uint32_t header;
 	int ret = read(mRILfd, &header, sizeof(header));
