@@ -41,7 +41,12 @@
 #include <surfaceflinger/Surface.h>
 #include <surfaceflinger/SurfaceComposerClient.h>
 #include <utils/ResourceTypes.h>
-#else
+#elif (SHORT_PLATFORM_VERSION == 41)
+#include <gui/Surface.h>
+#include <gui/SurfaceComposerClient.h>
+#include <androidfw/ResourceTypes.h>
+#else // Android version 4.2 and above
+#include <gui/ISurfaceComposer.h>
 #include <gui/Surface.h>
 #include <gui/SurfaceComposerClient.h>
 #include <androidfw/ResourceTypes.h>
@@ -244,14 +249,23 @@ status_t BootAnimation::readyToRun() {
     printf("Global count %d\n", mAssets.getGlobalCount());
     const ResTable& rt = mAssets.getResources();
 
+#if defined(SHORT_PLATFORM_VERSION) && (SHORT_PLATFORM_VERSION >= 42)
+    sp<IBinder> dtoken(SurfaceComposerClient::getBuiltInDisplay(
+            ISurfaceComposer::eDisplayIdMain));
+#endif
     DisplayInfo dinfo;
+
+#if defined(SHORT_PLATFORM_VERSION) && (SHORT_PLATFORM_VERSION >= 42)
+    status_t status = session()->getDisplayInfo(dtoken, &dinfo);
+#else
     status_t status = session()->getDisplayInfo(0, &dinfo);
+#endif
     if (status)
         return -1;
 
     // create the native surface
     sp<SurfaceControl> control = session()->createSurface(
-#if defined(SHORT_PLATFORM_VERSION) && (SHORT_PLATFORM_VERSION == 42)
+#if defined(SHORT_PLATFORM_VERSION) && (SHORT_PLATFORM_VERSION >= 42)
             String8("animation"),
 #elif defined(SHORT_PLATFORM_VERSION) && (SHORT_PLATFORM_VERSION == 23)
             0, String8("animation"), 0,
