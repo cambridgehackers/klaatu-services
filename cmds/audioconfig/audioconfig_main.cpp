@@ -159,6 +159,7 @@ public:
 	    break;
 	}
     }
+    int parse3dFile(int) { return -1; }
 };
 
 
