@@ -170,7 +170,7 @@ class KlaatuReaderPolicy: public InputReaderPolicyInterface {
     void getReaderConfiguration(InputReaderConfiguration* outConfig)
     {
         printf("[%s:%d]\n", __FUNCTION__, __LINE__);
-#if defined(SHORT_PLATFORM_VERSION) && (SHORT_PLATFORM_VERSION == 42)
+#if defined(SHORT_PLATFORM_VERSION) && (SHORT_PLATFORM_VERSION >= 42)
 static DisplayViewport vport;
         outConfig->setDisplayInfo(false, vport);
 #else

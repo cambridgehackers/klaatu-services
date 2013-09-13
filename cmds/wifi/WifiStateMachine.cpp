@@ -12,12 +12,22 @@
 #include <cutils/properties.h>
 #include <cutils/sockets.h>
 #include <hardware_legacy/wifi.h>
-#if defined(SHORT_PLATFORM_VERSION) && (SHORT_PLATFORM_VERSION == 23)
+#if !defined(SHORT_PLATFORM_VERSION)
+#error SHORT_PLATFORM_VERSION not defined!
+#elif (SHORT_PLATFORM_VERSION == 23)
 #include <arpa/inet.h>
 extern "C" {
 int dhcp_do_request(const char *ifname, in_addr_t *ipaddr, in_addr_t *gateway,
      in_addr_t *mask, in_addr_t *dns1, in_addr_t *dns2, in_addr_t *server,
      uint32_t  *lease);
+int dhcp_stop(const char *ifname);
+};
+#elif (SHORT_PLATFORM_VERSION == 43)
+/* dhcp.h in 4.3 has a prototype, but it's missing the last argument */
+extern "C" {
+int dhcp_do_request(const char *ifname, char *ipaddr, char *gateway,
+                    uint32_t *prefixLength, char *dns[], char *server,
+                    uint32_t *lease, char *vendorInfo, char *domains);
 int dhcp_stop(const char *ifname);
 };
 #else
@@ -184,7 +194,7 @@ int WifiStateMachine::request_wifi(int request)
         char dns1[PROPERTY_VALUE_MAX], dns2[PROPERTY_VALUE_MAX];
         char server[PROPERTY_VALUE_MAX], vendorInfo[PROPERTY_VALUE_MAX];
 
-#if defined(SHORT_PLATFORM_VERSION) && (SHORT_PLATFORM_VERSION == 23)
+#if (SHORT_PLATFORM_VERSION == 23)
         struct in_addr tt;
         in_addr_t t_ipaddr, t_gateway, t_dns1, t_dns2, t_server;
         int result = ::dhcp_do_request( mInterface.string(),
@@ -196,14 +206,21 @@ int WifiStateMachine::request_wifi(int request)
         CPY(dns2)
         CPY(server)
 #undef CPY
-#else
+#elif (SHORT_PLATFORM_VERSION == 40)
         int result = ::dhcp_do_request( mInterface.string(),
-            ipaddr, gateway, &prefixLength, dns1, dns2, server, &lease
-#if defined(SHORT_PLATFORM_VERSION) && (SHORT_PLATFORM_VERSION == 40)
+            ipaddr, gateway, &prefixLength, dns1, dns2, server, &lease);
+#elif (SHORT_PLATFORM_VERSION == 41) || (SHORT_PLATFORM_VERSION == 42)
+        int result = ::dhcp_do_request( mInterface.string(),
+            ipaddr, gateway, &prefixLength, dns1, dns2, server, &lease,
+            vendorInfo);
+#elif (SHORT_PLATFORM_VERSION == 43)
+        char *dns[3] = {dns1, dns2, NULL};
+        char domains[PROPERTY_VALUE_MAX];
+        int result = ::dhcp_do_request( mInterface.string(),
+            ipaddr, gateway, &prefixLength, dns, server, &lease,
+            vendorInfo, domains);
 #else
-                                                          , vendorInfo
-#endif
-                                                          );
+#error Unknown Platform version
 #endif
         SLOGD("......dhcp_do_request: result %d\n", result);
         if (result)
@@ -226,7 +243,7 @@ int WifiStateMachine::request_wifi(int request)
         enqueue(!ret ? CMD_UNLOAD_DRIVER_SUCCESS : CMD_UNLOAD_DRIVER_FAILURE);
         break;
     case WIFI_IS_DRIVER_LOADED:
-#if defined(SHORT_PLATFORM_VERSION) && (SHORT_PLATFORM_VERSION == 23)
+#if (SHORT_PLATFORM_VERSION == 23)
         return false;
 #else
         return is_wifi_driver_loaded();
@@ -241,23 +258,20 @@ int WifiStateMachine::request_wifi(int request)
 #endif
     case WIFI_CONNECT_SUPPLICANT:
         return wifi_connect_to_supplicant(
-#if defined(SHORT_PLATFORM_VERSION) && (SHORT_PLATFORM_VERSION <= 40)
-#else
+#if (SHORT_PLATFORM_VERSION > 40)
                                           mInterface.string()
 #endif
                                           );
     case WIFI_CLOSE_SUPPLICANT:
         wifi_close_supplicant_connection(
-#if defined(SHORT_PLATFORM_VERSION) && (SHORT_PLATFORM_VERSION <= 40)
-#else
+#if (SHORT_PLATFORM_VERSION > 40)
                                          mInterface.string()
 #endif
                                          );
         break;
     case WIFI_WAIT_EVENT:
         if (wifi_wait_for_event(
-#if defined(SHORT_PLATFORM_VERSION) && (SHORT_PLATFORM_VERSION <= 40)
-#else
+#if (SHORT_PLATFORM_VERSION > 40)
                                 mInterface.string(), 
 #endif
                                 rbuf, sizeof(rbuf)) > 0) {
@@ -355,8 +369,7 @@ String8 WifiStateMachine::doWifiStringCommand(const char *fmt, va_list args)
     SLOGV(".....Command: %s\n", buf);
     if (byteCount < 0 || byteCount >= BUF_SIZE
      || ::wifi_command(
-#if defined(SHORT_PLATFORM_VERSION) && (SHORT_PLATFORM_VERSION <= 40)
-#else
+#if (SHORT_PLATFORM_VERSION > 40)
                        mInterface.string(), 
 #endif
                        buf, reply, &reply_len))
@@ -557,8 +570,7 @@ void WifiStateMachine::disable_interface(void)
     mWifiInformation.bssid = "";
     mWifiInformation.ssid = "";
     mWifiInformation.network_id = -1;
-#if defined(SHORT_PLATFORM_VERSION) && (SHORT_PLATFORM_VERSION == 23)
-#else
+#if (SHORT_PLATFORM_VERSION != 23)
     mWifiInformation.supplicant_state = WPA_INTERFACE_DISABLED;
 #endif
     mWifiInformation.rssi = -9999;
@@ -650,8 +662,7 @@ static bool isConnecting(int state)
     switch (state) {
     case WPA_ASSOCIATING: case WPA_ASSOCIATED:
     case WPA_4WAY_HANDSHAKE: case WPA_GROUP_HANDSHAKE: case WPA_COMPLETED:
-#if defined(SHORT_PLATFORM_VERSION) && (SHORT_PLATFORM_VERSION == 23)
-#else
+#if (SHORT_PLATFORM_VERSION != 23)
     case WPA_AUTHENTICATING: 
 #endif
         return true;
@@ -913,7 +924,11 @@ stateprocess_t WifiStateMachine::invoke_process(int state, Message *message)
                 dns1 = "";
             if (!strcmp(dns2, "127.0.0.1"))
                 dns2 = "";
+#if (SHORT_PLATFORM_VERSION == 43)
+            ncommand("resolver setifdns %s %s %s %s", mInterface.string(), "", dns1, dns2);
+#else
             ncommand("resolver setifdns %s %s %s", mInterface.string(), dns1, dns2);
+#endif
             ncommand("resolver setifdns %s", mInterface.string());
         }
         {
@@ -1008,8 +1023,7 @@ stateprocess_t WifiStateMachine::invoke_process(int state, Message *message)
                         ssid = elements[3];
                 }
                 ssid = trimString(ssid);
-#if defined(SHORT_PLATFORM_VERSION) && (SHORT_PLATFORM_VERSION == 23)
-#else
+#if (SHORT_PLATFORM_VERSION != 23)
                 if (!ssid.isEmpty())
 #endif
                     mStations.push(ScannedStation(elements[0], ssid, flags, frequency, rssi));
@@ -1043,8 +1057,7 @@ stateprocess_t WifiStateMachine::invoke_process(int state, Message *message)
             }
             String8 s = doWifiStringCommand("ADD_NETWORK");
             if (
-#if defined(SHORT_PLATFORM_VERSION) && (SHORT_PLATFORM_VERSION == 23)
-#else
+#if (SHORT_PLATFORM_VERSION != 23)
                 s.isEmpty() ||
 #endif
                 !isdigit(s.string()[0])) {
@@ -1059,14 +1072,12 @@ stateprocess_t WifiStateMachine::invoke_process(int state, Message *message)
         // Configure the SSID, Key management, Pre-shared key, Priority
         if ((!doWifiBooleanCommand("SET_NETWORK %d ssid \"%s\"", network_id, cs.ssid.string())
          || (
-#if defined(SHORT_PLATFORM_VERSION) && (SHORT_PLATFORM_VERSION == 23)
-#else
+#if (SHORT_PLATFORM_VERSION != 23)
              !cs.key_mgmt.isEmpty() &&
 #endif
              !doWifiBooleanCommand("SET_NETWORK %d key_mgmt %s", network_id, cs.key_mgmt.string()))
          || (
-#if defined(SHORT_PLATFORM_VERSION) && (SHORT_PLATFORM_VERSION == 23)
-#else
+#if (SHORT_PLATFORM_VERSION != 23)
              !cs.pre_shared_key.isEmpty() &&
 #endif
              cs.pre_shared_key != "*"

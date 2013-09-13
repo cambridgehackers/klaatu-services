@@ -6,6 +6,9 @@ LOCAL_MODULE:= klaatu_schedulingmanager
 LOCAL_MODULE_TAGS:=optional
 LOCAL_C_INCLUDES := frameworks/av/services/audioflinger
 
+SVERSION:=$(subst ., ,$(PLATFORM_VERSION))
+LOCAL_CFLAGS += -DSHORT_PLATFORM_VERSION=$(word 1,$(SVERSION))$(word 2,$(SVERSION))
+
 LOCAL_SHARED_LIBRARIES := libcutils libbinder libutils
 LOCAL_STATIC_LIBRARIES := libscheduling_policy
 
