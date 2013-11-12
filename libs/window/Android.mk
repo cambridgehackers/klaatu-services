@@ -14,6 +14,7 @@ LOCAL_CFLAGS += -DSHORT_PLATFORM_VERSION=$(word 1,$(SVERSION))$(word 2,$(SVERSIO
 LOCAL_CFLAGS += -rdynamic
 LOCAL_MODULE := libklaatu_window
 LOCAL_MODULE_CLASS    := SHARED_LIBRARIES
+LOCAL_MODULE_TAGS := optional
 LOCAL_SRC_FILES := $(libklaatu_window_SRC_FILES)
 LOCAL_C_INCLUDES := frameworks/base/services \
         external/skia/include/core \
