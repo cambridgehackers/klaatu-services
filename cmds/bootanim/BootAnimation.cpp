@@ -54,7 +54,11 @@
 
 #include <core/SkBitmap.h>
 #include <core/SkStream.h>
+#if (SHORT_PLATFORM_VERSION >= 44)
+#include <core/SkImageDecoder.h>
+#else
 #include <images/SkImageDecoder.h>
+#endif
 
 #include <GLES/gl.h>
 #include <GLES/glext.h>

@@ -11,7 +11,11 @@ LOCAL_SHARED_LIBRARIES := libcutils libutils
 ifeq ($(PLATFORM_VERSION),2.3.7)
 LOCAL_SHARED_LIBRARIES += libui
 else
+ifeq ($(SHORT_PLATFORM_VERSION),44)
+LOCAL_SHARED_LIBRARIES += libinputservice
+else
 LOCAL_SHARED_LIBRARIES += libinput
+endif
 endif
 SVERSION:=$(subst ., ,$(PLATFORM_VERSION))
 LOCAL_CFLAGS += -DSHORT_PLATFORM_VERSION=$(word 1,$(SVERSION))$(word 2,$(SVERSION))

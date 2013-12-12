@@ -219,6 +219,13 @@ int WifiStateMachine::request_wifi(int request)
         int result = ::dhcp_do_request( mInterface.string(),
             ipaddr, gateway, &prefixLength, dns, server, &lease,
             vendorInfo, domains);
+#elif (SHORT_PLATFORM_VERSION == 44)
+        char *dns[3] = {dns1, dns2, NULL};
+        char domain[PROPERTY_VALUE_MAX];
+        char mtu[PROPERTY_VALUE_MAX]; 
+        int result = ::dhcp_do_request( mInterface.string(),
+            ipaddr, gateway, &prefixLength, dns, server, &lease,
+            vendorInfo, domain, mtu);
 #else
 #error Unknown Platform version
 #endif
@@ -258,20 +265,20 @@ int WifiStateMachine::request_wifi(int request)
 #endif
     case WIFI_CONNECT_SUPPLICANT:
         return wifi_connect_to_supplicant(
-#if (SHORT_PLATFORM_VERSION > 40)
+#if (SHORT_PLATFORM_VERSION > 40) && (SHORT_PLATFORM_VERSION < 44)
                                           mInterface.string()
 #endif
                                           );
     case WIFI_CLOSE_SUPPLICANT:
         wifi_close_supplicant_connection(
-#if (SHORT_PLATFORM_VERSION > 40)
+#if (SHORT_PLATFORM_VERSION > 40) && (SHORT_PLATFORM_VERSION < 44)
                                          mInterface.string()
 #endif
                                          );
         break;
     case WIFI_WAIT_EVENT:
         if (wifi_wait_for_event(
-#if (SHORT_PLATFORM_VERSION > 40)
+#if (SHORT_PLATFORM_VERSION > 40) && (SHORT_PLATFORM_VERSION < 44)
                                 mInterface.string(), 
 #endif
                                 rbuf, sizeof(rbuf)) > 0) {
@@ -369,7 +376,7 @@ String8 WifiStateMachine::doWifiStringCommand(const char *fmt, va_list args)
     SLOGV(".....Command: %s\n", buf);
     if (byteCount < 0 || byteCount >= BUF_SIZE
      || ::wifi_command(
-#if (SHORT_PLATFORM_VERSION > 40)
+#if (SHORT_PLATFORM_VERSION > 40) && (SHORT_PLATFORM_VERSION < 44)
                        mInterface.string(), 
 #endif
                        buf, reply, &reply_len))

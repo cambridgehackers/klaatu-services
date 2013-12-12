@@ -11,6 +11,9 @@ LOCAL_MODULE_TAGS:= optional
 LOCAL_C_INCLUDES += $(LOCAL_PATH)/../../include
 LOCAL_SHARED_LIBRARIES := libcutils libbinder libutils libpowermanager
 
+SVERSION:=$(subst ., ,$(PLATFORM_VERSION))
+LOCAL_CFLAGS += -DSHORT_PLATFORM_VERSION=$(word 1,$(SVERSION))$(word 2,$(SVERSION))
+
 ALL_DEFAULT_INSTALLED_MODULES += $(TARGET_OUT)/bin/klaatu_powermanager
 include $(BUILD_EXECUTABLE)
 endif

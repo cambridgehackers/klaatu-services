@@ -101,7 +101,14 @@ public:
     }
 
     // BnPowerManager
-    status_t acquireWakeLock(int flags, const sp<IBinder>& lock, const String16& tag);
+    status_t acquireWakeLock(int flags, const sp<IBinder>& lock, const String16& tag
+#if (SHORT_PLATFORM_VERSION >= 44)
+, const String16& packageName
+#endif
+);
+#if (SHORT_PLATFORM_VERSION >= 44)
+    status_t acquireWakeLockWithUid(int flags, const sp<IBinder>& lock, const String16& tag, const String16& packageName, int uid);
+#endif
     status_t releaseWakeLock(const sp<IBinder>& lock, int flags);
 
 private:
@@ -112,7 +119,11 @@ private:
 };
 
 // See actual implementation in /frameworks/base/services/java/com/android/server/PowerManagerService.java
-status_t FakePowerManager::acquireWakeLock(int flags, const sp<IBinder>& lock, const String16& tag)
+status_t FakePowerManager::acquireWakeLock(int flags, const sp<IBinder>& lock, const String16& tag
+#if (SHORT_PLATFORM_VERSION >= 44)
+, const String16& packageName
+#endif
+)
 {
     int uid = IPCThreadState::self()->getCallingUid();
     int pid = IPCThreadState::self()->getCallingPid();
@@ -125,6 +136,13 @@ status_t FakePowerManager::acquireWakeLock(int flags, const sp<IBinder>& lock, c
     IPCThreadState::self()->restoreCallingIdentity(token);
     return NO_ERROR;
 }
+
+#if (SHORT_PLATFORM_VERSION >= 44)
+status_t FakePowerManager::acquireWakeLockWithUid(int flags, const sp<IBinder>& lock, const String16& tag, const String16& packageName, int uid)
+{
+    return acquireWakeLock(flags, lock, tag, packageName);
+}
+#endif
 
 status_t FakePowerManager::releaseWakeLock(const sp<IBinder>& lock, int flags)
 {
@@ -171,7 +189,11 @@ status_t BnPowerManager::onTransact( uint32_t code, const Parcel& data,
         int32_t flags    = data.readInt32();
         sp<IBinder> lock = data.readStrongBinder();
         String16 tag     = data.readString16();
-        return acquireWakeLock(flags, lock, tag);
+        return acquireWakeLock(flags, lock, tag
+#if (SHORT_PLATFORM_VERSION == 44)
+        ,String16("generic")
+#endif
+        );
         }
         break;
     case RELEASE_WAKE_LOCK: {
