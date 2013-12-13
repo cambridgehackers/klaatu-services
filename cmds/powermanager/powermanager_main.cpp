@@ -108,6 +108,7 @@ public:
 );
 #if (SHORT_PLATFORM_VERSION >= 44)
     status_t acquireWakeLockWithUid(int flags, const sp<IBinder>& lock, const String16& tag, const String16& packageName, int uid);
+    status_t updateWakeLockUids(const sp<IBinder>& lock, int len, const int *uids);
 #endif
     status_t releaseWakeLock(const sp<IBinder>& lock, int flags);
 
@@ -141,6 +142,11 @@ status_t FakePowerManager::acquireWakeLock(int flags, const sp<IBinder>& lock, c
 status_t FakePowerManager::acquireWakeLockWithUid(int flags, const sp<IBinder>& lock, const String16& tag, const String16& packageName, int uid)
 {
     return acquireWakeLock(flags, lock, tag, packageName);
+}
+
+status_t FakePowerManager::updateWakeLockUids(const sp<IBinder>& lock, int len, const int *uids)
+{
+    return NO_ERROR;
 }
 #endif
 
