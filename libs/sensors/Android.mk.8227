@@ -1,0 +1,27 @@
+LOCAL_PATH:= $(call my-dir)
+include $(CLEAR_VARS)
+
+LOCAL_SRC_FILES:= \
+    sfwservicetest.cpp accelerationsensor.cpp
+	#sensor.cpp accelerationsensor.cpp
+
+LOCAL_CFLAGS:= -I.. -DKLAATU_SENSOR_LIB 
+
+LOCAL_C_INCLUDES += external/klaatu-services/include \
+	$(LOCAL_PATH)/../../../../malaga/sensorframework/android/sfw \
+    $(LOCAL_PATH)/../../../../malaga/sensorframework/sp
+
+LOCAL_SHARED_LIBRARIES := \
+	libcutils libutils libui libgui libhardware libsfwapi libstlport
+
+LOCAL_STATIC_LIBRARIES := \
+    libsfwcommon_static
+
+
+LOCAL_MODULE:= libklaatu_sensors
+
+LOCAL_MODULE_TAGS := optional
+
+include $(BUILD_SHARED_LIBRARY)
+
+ALL_DEFAULT_INSTALLED_MODULES += $(TARGET_OUT)/lib/libklaatu_sensors.so
