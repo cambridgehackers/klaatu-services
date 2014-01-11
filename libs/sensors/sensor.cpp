@@ -138,7 +138,7 @@ static int beginSensorThread(void *cookie)
     return static_cast<KlaatuSensor *>(cookie)->sensorEventThread();
 }
 
-void KlaatuSensor::initSensor(int32_t sensor_type)
+int KlaatuSensor::initSensor(int32_t sensor_type)
 {
     mCookie = this;
     // If no snesor selected, set the default
@@ -199,6 +199,7 @@ void KlaatuSensor::initSensor(int32_t sensor_type)
         printf("ERROR!  Unable to create Sensor thread \n");
 	}
 
+    return EXIT_SUCCESS;
 }
 void KlaatuSensor::exitSensor(int32_t sensor_type)
 {
