@@ -200,11 +200,17 @@ void KlaatuSensor::initSensor(int32_t sensor_type)
 	}
 
 }
+void KlaatuSensor::exitSensor(int32_t sensor_type)
+{
+}
 KlaatuSensor::KlaatuSensor(/*ScreenControl *s*/)
 {
     //sensor_event_handler = NULL;
     //int32_t sensor_type = Sensor::TYPE_ACCELEROMETER;
     //initSensor(sensor_type);
+}
+KlaatuSensor::~KlaatuSensor(/*ScreenControl *s*/)
+{
 }
 
 

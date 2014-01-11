@@ -30,7 +30,7 @@
 using namespace android;
 
 #define LOG 0
-#define LOG1 1
+#define LOG1 0
 
 #define MIN_VALUE -2147483647
 #if 0
@@ -51,21 +51,21 @@ int onSensorChanged(ASensorEvent buffer);
 
 int mCurrentRotation=0;
 // Timestamp and value of the last accelerometer sample.
-long mLastFilteredTimestampNanos;
+long long mLastFilteredTimestampNanos;
 float mLastFilteredX, mLastFilteredY, mLastFilteredZ;
 
 // The last proposed rotation, -1 if unknown.
 int mProposedRotation;
 // Timestamp when the device last appeared to be flat for sure (the flat delay elapsed).
-long mFlatTimestampNanos;
+long long mFlatTimestampNanos;
 // Timestamp when the device last appeared to be swinging.
-long mSwingTimestampNanos;
+long long mSwingTimestampNanos;
 // Timestamp when the device last appeared to be undergoing external acceleration.
-long mAccelerationTimestampNanos;
+long long mAccelerationTimestampNanos;
 // Value of the current predicted rotation, -1 if unknown.
 int mPredictedRotation;
 // Timestamp of when the predicted rotation most recently changed.
-long mPredictedRotationTimestampNanos;
+long long mPredictedRotationTimestampNanos;
 
 // We work with all angles in degrees in this class.
 #define RADIANS_TO_DEGREES  ((float) (180 / (22/7)))
@@ -162,7 +162,8 @@ long mPredictedRotationTimestampNanos;
 
 /** Standard gravity (g) on Earth. This value is equivalent to 1G */
 #define STANDARD_GRAVITY  9.80665
-#define NEAR_ZERO_MAGNITUDE  1 // m/s^2
+//#define NEAR_ZERO_MAGNITUDE  1 // m/s^2
+#define NEAR_ZERO_MAGNITUDE  0.9 // m/s^2
 #define ACCELERATION_TOLERANCE  4 // m/s^2
 #define MIN_ACCELERATION_MAGNITUDE  (STANDARD_GRAVITY - ACCELERATION_TOLERANCE)
 #define MAX_ACCELERATION_MAGNITUDE (STANDARD_GRAVITY + ACCELERATION_TOLERANCE)
@@ -192,30 +193,32 @@ int TILT_TOLERANCE[4][2] = {
 // History of observed tilt angles.
 #define TILT_HISTORY_SIZE  40
 float mTiltHistory[TILT_HISTORY_SIZE];
-long mTiltHistoryTimestampNanos[TILT_HISTORY_SIZE];
+long long mTiltHistoryTimestampNanos[TILT_HISTORY_SIZE];
 int mTiltHistoryIndex;
 
 int nextTiltHistoryIndex(int index) {
     index = (index == 0 ? TILT_HISTORY_SIZE : index) - 1;
-    return mTiltHistoryTimestampNanos[index] != MIN_VALUE ? index : -1;
+    return mTiltHistoryTimestampNanos[index] != (long long) MIN_VALUE ? index : -1;
 }
 
-static float remainingMS(long now, long until) {
+static float remainingMS(long long now, long long until) {
     return now >= until ? 0 : (until - now) * 0.000001f;
 }
 
-void updatePredictedRotation(long now, int rotation) {
+void updatePredictedRotation(long long now, int rotation) {
     if (mPredictedRotation != rotation) {
+		//printf("%s: updated to %llud\n", __func__, now);
         mPredictedRotation = rotation;
         mPredictedRotationTimestampNanos = now;
     }
+		//else printf("%s: NOT updated, mPredictedRotation = %d, rotation = %d \n", __func__, mPredictedRotation, rotation);
 }
 
 bool isAcceleratingF(float magnitude) {
     return magnitude < MIN_ACCELERATION_MAGNITUDE
             || magnitude > MAX_ACCELERATION_MAGNITUDE;
 }
-bool isFlatF(long now) {
+bool isFlatF(long long now) {
     for (int i = mTiltHistoryIndex; (i = nextTiltHistoryIndex(i)) >= 0; ) {
         if (mTiltHistory[i] < FLAT_ANGLE) {
             break;
@@ -228,7 +231,7 @@ bool isFlatF(long now) {
     return false;
 }
 
-bool isSwingingF(long now, float tilt) {
+bool isSwingingF(long long now, float tilt) {
     for (int i = mTiltHistoryIndex; (i = nextTiltHistoryIndex(i)) >= 0; ) {
         if (mTiltHistoryTimestampNanos[i] + SWING_TIME_NANOS < now) {
             break;
@@ -240,7 +243,7 @@ bool isSwingingF(long now, float tilt) {
     }
     return false;
 }
-void addTiltHistoryEntry(long now, float tilt) {
+void addTiltHistoryEntry(long long now, float tilt) {
     mTiltHistory[mTiltHistoryIndex] = tilt;
     mTiltHistoryTimestampNanos[mTiltHistoryIndex] = now;
     mTiltHistoryIndex = (mTiltHistoryIndex + 1) % TILT_HISTORY_SIZE;
@@ -252,6 +255,7 @@ void clearTiltHistory() {
 	mTiltHistoryIndex = 1;
 }
 void clearPredictedRotation() {
+	//printf("%s: \n", __func__);
 	mPredictedRotation = -1;
 	mPredictedRotationTimestampNanos = MIN_VALUE;
 }
@@ -260,8 +264,18 @@ void clearPredictedRotation() {
  * Returns true if the tilt angle is acceptable for a given predicted rotation.
  */
 bool isTiltAngleAcceptable(int rotation, int tiltAngle) {
+#if 1
+	#if 0
+	printf("%s: %s,  tiltAngle = %d, rotation=%d,  TILT_TOLERANCE[rotation][0] = %d, TILT_TOLERANCE[rotation][1] = %d\n", __func__, 
+		tiltAngle >= TILT_TOLERANCE[rotation][0]
+		            && tiltAngle <= TILT_TOLERANCE[rotation][1] ? "YES":"NO",
+		tiltAngle, rotation, TILT_TOLERANCE[rotation][0], TILT_TOLERANCE[rotation][1]);
+	#endif
     return tiltAngle >= TILT_TOLERANCE[rotation][0]
             && tiltAngle <= TILT_TOLERANCE[rotation][1];
+#else
+			return true;
+#endif
 }
 
 /**
@@ -286,10 +300,12 @@ bool isOrientationAngleAcceptable(int rotation, int orientationAngle) {
                     + ADJACENT_ORIENTATION_ANGLE_GAP / 2;
             if (rotation == 0) {
                 if (orientationAngle >= 315 && orientationAngle < lowerBound + 360) {
+					//printf("%s(%d): NO\n", __func__, __LINE__);
                     return false;
                 }
             } else {
                 if (orientationAngle < lowerBound) {
+					//printf("%s(%d): NO\n", __func__, __LINE__);
                     return false;
                 }
             }
@@ -305,43 +321,52 @@ bool isOrientationAngleAcceptable(int rotation, int orientationAngle) {
                     - ADJACENT_ORIENTATION_ANGLE_GAP / 2;
             if (rotation == 0) {
                 if (orientationAngle <= 45 && orientationAngle > upperBound) {
+					//printf("%s(%d): NO\n", __func__, __LINE__);
                     return false;
                 }
             } else {
                 if (orientationAngle > upperBound) {
+					//printf("%s(%d): NO\n", __func__, __LINE__);
                     return false;
                 }
             }
         }
     }
+	//printf("%s: YES\n", __func__);
     return true;
 }
 /**
  * Returns true if the predicted rotation is ready to be advertised as a
  * proposed rotation.
  */
-bool isPredictedRotationAcceptable(long now) {
+bool isPredictedRotationAcceptable(long long now) {
+#if 0
     // The predicted rotation must have settled long enough.
     if (now < mPredictedRotationTimestampNanos + PROPOSAL_SETTLE_TIME_NANOS) {
+		printf("%d: %lld < %lld + %d\n", __LINE__, now, mPredictedRotationTimestampNanos, PROPOSAL_SETTLE_TIME_NANOS);
         return false;
     }
 
     // The last flat state (time since picked up) must have been sufficiently long ago.
     if (now < mFlatTimestampNanos + PROPOSAL_MIN_TIME_SINCE_FLAT_ENDED_NANOS) {
+		printf("%d: %lld < %lld + %d\n", __LINE__, now, mFlatTimestampNanos, PROPOSAL_MIN_TIME_SINCE_FLAT_ENDED_NANOS);
         return false;
     }
 
     // The last swing state (time since last movement to put down) must have been
     // sufficiently long ago.
     if (now < mSwingTimestampNanos + PROPOSAL_MIN_TIME_SINCE_SWING_ENDED_NANOS) {
+		printf("%d: %lld < %lld + %d\n", __LINE__, now, mSwingTimestampNanos, PROPOSAL_MIN_TIME_SINCE_SWING_ENDED_NANOS);
         return false;
     }
 
     // The last acceleration state must have been sufficiently long ago.
     if (now < mAccelerationTimestampNanos
             + PROPOSAL_MIN_TIME_SINCE_ACCELERATION_ENDED_NANOS) {
+		printf("%d: %lld < %lld + %d\n", __LINE__, now, mAccelerationTimestampNanos, PROPOSAL_MIN_TIME_SINCE_ACCELERATION_ENDED_NANOS);
         return false;
     }
+#endif
 
     // Looks good!
     return true;
@@ -373,10 +398,11 @@ int onSensorChanged(ASensorEvent buffer)
     // Reset the orientation listener state if the samples are too far apart in time
     // or when we see values of (0, 0, 0) which indicates that we polled the
     // accelerometer too soon after turning it on and we don't have any data yet.
-    long now = buffer.timestamp;
-    long then = mLastFilteredTimestampNanos;
+    long long now = buffer.timestamp;
+    long long then = mLastFilteredTimestampNanos;
     float timeDeltaMS = (now - then) * 0.000001f;
     bool skipSample;
+		//printf("\n%d: %llu < %llu + %d\n", __LINE__, now, mFlatTimestampNanos, PROPOSAL_MIN_TIME_SINCE_FLAT_ENDED_NANOS);
     if (now < then
             || now > then + MAX_FILTER_DELTA_TIME_NANOS
             || (x == 0 && y == 0 && z == 0)) {
@@ -391,6 +417,7 @@ int onSensorChanged(ASensorEvent buffer)
         y = alpha * (y - mLastFilteredY) + mLastFilteredY;
         z = alpha * (z - mLastFilteredZ) + mLastFilteredZ;
         if (LOG) {
+			printf("timeDeltaMS = %f   ", timeDeltaMS);
 			printf("Filtered acceleration vector: x= %f, y= %f, z= %f,  magnitude= %f\n", x,y,z, sqrt(x * x + y * y + z * z));
         }
         skipSample = false;
@@ -408,7 +435,7 @@ int onSensorChanged(ASensorEvent buffer)
         float magnitude = sqrt(x * x + y * y + z * z);
         if (magnitude < NEAR_ZERO_MAGNITUDE) {
             if (LOG) {
-                //printf("Ignoring sensor data, magnitude too close to zero.\n");
+                printf("Ignoring sensor data, magnitude %f too close to zero.\n", magnitude);
             }
             clearPredictedRotation();
         } else {
@@ -468,7 +495,7 @@ int onSensorChanged(ASensorEvent buffer)
                                 orientationAngle))
 				{
                     updatePredictedRotation(now, nearestRotation);
-                    if (LOG) {
+                    if (LOG1) {
                         #if 0
                         Slog.v(TAG, "Predicted: "
                                 + "tiltAngle=" + tiltAngle
@@ -484,7 +511,7 @@ int onSensorChanged(ASensorEvent buffer)
 						#endif
                     }
                 } else {
-                    if (LOG) {
+                    if (LOG1) {
                         #if 0
                         Slog.v(TAG, "Ignoring sensor data, no predicted rotation: "
                                 + "tiltAngle=" + tiltAngle
@@ -507,7 +534,8 @@ int onSensorChanged(ASensorEvent buffer)
     }
 
     // Write final statistics about where we are in the orientation detection process.
-    if (LOG) {
+    if (LOG1)
+	{
         #if 0
         Slog.v(TAG, "Result: currentRotation=" + mOrientationListener.mCurrentRotation
                 + ", proposedRotation=" + mProposedRotation
@@ -533,10 +561,12 @@ int onSensorChanged(ASensorEvent buffer)
         printf(", isAccelerating= %d", isAccelerating);
         printf(", isFlat= %d", isFlat);
         printf(", isSwinging= %d", isSwinging);
+		printf("\n");
         printf(", timeUntilSettledMS= %lf", remainingMS(now, mPredictedRotationTimestampNanos + PROPOSAL_SETTLE_TIME_NANOS));
         printf(", timeUntilAccelerationDelayExpiredMS= %lf", remainingMS(now, mAccelerationTimestampNanos + PROPOSAL_MIN_TIME_SINCE_ACCELERATION_ENDED_NANOS));
         printf(", timeUntilFlatDelayExpiredMS= %lf", remainingMS(now, mFlatTimestampNanos + PROPOSAL_MIN_TIME_SINCE_FLAT_ENDED_NANOS));
         printf(", timeUntilSwingDelayExpiredMS= %lf", remainingMS(now, mSwingTimestampNanos + PROPOSAL_MIN_TIME_SINCE_SWING_ENDED_NANOS));
+		printf("\n");
         #endif
         #endif
     }
