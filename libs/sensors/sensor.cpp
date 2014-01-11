@@ -42,6 +42,11 @@ namespace android {
  * in receiver() .
  */
 void *mCookie=NULL;
+bool keepRunning = true;
+SensorManager *mgr;
+Sensor const* accelerometer = NULL;
+Sensor const* gyroscope = NULL;
+SensorEventQueue *mq;
 
 int receiver(int fd, int events, void* data)
 {
@@ -71,12 +76,11 @@ int receiver(int fd, int events, void* data)
                         1.0/t);
                 #endif
                 int rotation = onSensorChanged(buffer[i]);
-                #if 1
                 if (rotation >= 0) {
+		    printf("%s:rotation = %d\n", __func__, rotation);
                     if (static_cast<KlaatuSensor *>(mCookie)->sensor_event_handler)
                         static_cast<KlaatuSensor *>(mCookie)->sensor_event_handler(Sensor::TYPE_ACCELEROMETER, rotation);
                 }
-                #endif
             }
 			
             /*
@@ -140,28 +144,11 @@ static int beginSensorThread(void *cookie)
 
 int KlaatuSensor::initSensor(int32_t sensor_type)
 {
-    mCookie = this;
-    // If no snesor selected, set the default
-    if (!sensor_type)
-        sensor_type = Sensor::TYPE_ACCELEROMETER;
-
-    // Check if sensor is ssupported yet..
-
-    SensorManager& mgr(SensorManager::getInstance());
-
-    Sensor const* const* list;
-    ssize_t count = mgr.getSensorList(&list);
-    printf("numSensors=%d\n", int(count));
-    for (size_t i=0 ; i<size_t(count) ; i++) {
-        printf("Name: %s, Type=%d, Vendor: %s\n", list[i]->getName().string(), list[i]->getType(), list[i]->getVendor().string());
-    }
-
-    mq = mgr.createEventQueue();
-    printf("queue=%p\n", mq.get());
 
     if (sensor_type & Sensor::TYPE_ACCELEROMETER)
     {
-        Sensor const* accelerometer = mgr.getDefaultSensor(Sensor::TYPE_ACCELEROMETER);
+        //Sensor const* accelerometer = mgr->getDefaultSensor(Sensor::TYPE_ACCELEROMETER);
+        accelerometer = mgr->getDefaultSensor(Sensor::TYPE_ACCELEROMETER);
         printf("accelerometer=%p (%s)\n",
                 accelerometer, accelerometer->getName().string());
         
@@ -178,7 +165,8 @@ int KlaatuSensor::initSensor(int32_t sensor_type)
      */
     if (sensor_type & Sensor::TYPE_GYROSCOPE)
     {
-        Sensor const* gyroscope = mgr.getDefaultSensor(Sensor::TYPE_GYROSCOPE);
+        //Sensor const* gyroscope = mgr->getDefaultSensor(Sensor::TYPE_GYROSCOPE);
+        gyroscope = mgr->getDefaultSensor(Sensor::TYPE_GYROSCOPE);
         printf("gyroscope=%p (%s)\n",
                 gyroscope, gyroscope->getName().string());
         
@@ -189,6 +177,42 @@ int KlaatuSensor::initSensor(int32_t sensor_type)
         mq->setEventRate(gyroscope, ms2ns(10));
     }
 
+    return EXIT_SUCCESS;
+}
+void KlaatuSensor::exitSensor(int32_t sensor_type)
+{
+    if (sensor_type & Sensor::TYPE_ACCELEROMETER)
+    {
+        mq->disableSensor(accelerometer);
+    }
+    if (sensor_type & Sensor::TYPE_GYROSCOPE)
+    {
+        mq->disableSensor(gyroscope);
+    }
+}
+KlaatuSensor::KlaatuSensor(/*ScreenControl *s*/)
+{
+	printf("%s: In\n", __func__);
+    mCookie = this;
+    // If no snesor selected, set the default
+    if (!sensor_type)
+        sensor_type = Sensor::TYPE_ACCELEROMETER;
+
+    // Check if sensor is ssupported yet..
+
+    //SensorManager& mgr(SensorManager::getInstance());
+    mgr=new SensorManager;
+
+    Sensor const* const* list;
+    ssize_t count = mgr->getSensorList(&list);
+    printf("numSensors=%d\n", int(count));
+    for (size_t i=0 ; i<size_t(count) ; i++) {
+        printf("Name: %s, Type=%d, Vendor: %s\n", list[i]->getName().string(), list[i]->getType(), list[i]->getVendor().string());
+    }
+
+    mq = mgr->createEventQueue();
+    printf("queue=%p\n", mq.get());
+
     mloop= new Looper(false);
 	
     mloop->addFd(mq->getFd(), 0, ALOOPER_EVENT_INPUT, receiver, mq.get());
@@ -198,17 +222,6 @@ int KlaatuSensor::initSensor(int32_t sensor_type)
         //LOG_ALWAYS_FATAL("ERROR!  Unable to create Sensor thread \n");
         printf("ERROR!  Unable to create Sensor thread \n");
 	}
-
-    return EXIT_SUCCESS;
-}
-void KlaatuSensor::exitSensor(int32_t sensor_type)
-{
-}
-KlaatuSensor::KlaatuSensor(/*ScreenControl *s*/)
-{
-    //sensor_event_handler = NULL;
-    //int32_t sensor_type = Sensor::TYPE_ACCELEROMETER;
-    //initSensor(sensor_type);
 }
 KlaatuSensor::~KlaatuSensor(/*ScreenControl *s*/)
 {
