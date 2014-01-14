@@ -37,10 +37,9 @@ public:
 
 	void (*sensor_event_handler)(int sensor_type, int value);
 
-	int         sensorEventThread();
-	//void        initSensor(int32_t sensor_type);
-	int        initSensor(int32_t sensor_type);
-	void        exitSensor(int32_t sensor_type);
+	int sensorEventThread();
+	int initSensor(int32_t sensor_type);
+	void exitSensor(int32_t sensor_type);
 
 
 private:

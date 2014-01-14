@@ -133,7 +133,7 @@ void EvHandler::sensorEvent(const SfwMessage &event)
 			buffer.data[1] = data[1];
 			buffer.data[2] = data[2];
 			buffer.timestamp = ev.ts;
-			//printf("buffer.timestamp  = %llu, ev.ts = %llu (%llx)\n", buffer.timestamp, ev.ts, ev.ts);
+		//printf("buffer.timestamp  = %llu, ev.ts = %llu (%llx)\n", buffer.timestamp, ev.ts, ev.ts);
 		rotation = onSensorChanged(buffer);
                 if (rotation >= 0) {
 			int nr = rotation;

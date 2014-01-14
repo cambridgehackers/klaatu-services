@@ -77,7 +77,7 @@ int receiver(int fd, int events, void* data)
                 #endif
                 int rotation = onSensorChanged(buffer[i]);
                 if (rotation >= 0) {
-		    printf("%s:rotation = %d\n", __func__, rotation);
+		    		printf("%s:rotation = %d\n", __func__, rotation);
                     if (static_cast<KlaatuSensor *>(mCookie)->sensor_event_handler)
                         static_cast<KlaatuSensor *>(mCookie)->sensor_event_handler(Sensor::TYPE_ACCELEROMETER, rotation);
                 }
@@ -147,8 +147,7 @@ int KlaatuSensor::initSensor(int32_t sensor_type)
 
     if (sensor_type & Sensor::TYPE_ACCELEROMETER)
     {
-        //Sensor const* accelerometer = mgr->getDefaultSensor(Sensor::TYPE_ACCELEROMETER);
-        accelerometer = mgr->getDefaultSensor(Sensor::TYPE_ACCELEROMETER);
+                accelerometer = mgr->getDefaultSensor(Sensor::TYPE_ACCELEROMETER);
         printf("accelerometer=%p (%s)\n",
                 accelerometer, accelerometer->getName().string());
         
@@ -165,8 +164,7 @@ int KlaatuSensor::initSensor(int32_t sensor_type)
      */
     if (sensor_type & Sensor::TYPE_GYROSCOPE)
     {
-        //Sensor const* gyroscope = mgr->getDefaultSensor(Sensor::TYPE_GYROSCOPE);
-        gyroscope = mgr->getDefaultSensor(Sensor::TYPE_GYROSCOPE);
+                gyroscope = mgr->getDefaultSensor(Sensor::TYPE_GYROSCOPE);
         printf("gyroscope=%p (%s)\n",
                 gyroscope, gyroscope->getName().string());
         
