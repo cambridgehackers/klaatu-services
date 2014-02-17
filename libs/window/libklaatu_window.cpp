@@ -62,12 +62,12 @@ void klaatu_video::get_display_size(int* w, int* h)
 
 	if (status)
 		{
-		w = h = 0;
+		*w = *h = 0;
 		return;
 		}
 
-	w = dinfo.w;
-	h = dinfo.h;
+	*w = dinfo.w;
+	*h = dinfo.h;
 
 	return;
 }
@@ -111,4 +111,5 @@ unsigned int klaatu_video::get_native_window(int w, int h)
 
 	return (unsigned int)eglWindow;
 }
+
 
