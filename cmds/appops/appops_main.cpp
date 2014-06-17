@@ -62,14 +62,22 @@ public:
         return MODE_ALLOWED;
     }
 
-    int32_t startOperation(int32_t code, int32_t uid, const String16& name)
+    int32_t startOperation(
+#if (SHORT_PLATFORM_VERSION >= 44)
+        const sp<IBinder>& token,
+#endif
+        int32_t code, int32_t uid, const String16& name)
     {
 	ALOGI("Starting operation '%s' for code=%d uid=%d\n",
               String8(name).string(), code, uid);
         return MODE_ALLOWED;
     }
 
-    void finishOperation(int32_t code, int32_t uid, const String16& name)
+    void finishOperation(
+#if (SHORT_PLATFORM_VERSION >= 44)
+        const sp<IBinder>& token,
+#endif
+        int32_t code, int32_t uid, const String16& name)
     {
 	ALOGI("Finishing operation '%s' for code=%d uid=%d\n",
               String8(name).string(), code, uid);
@@ -85,6 +93,14 @@ public:
     {
 	ALOGI("Stopping watching mode\n");
     }
+
+#if (SHORT_PLATFORM_VERSION >= 44)
+    sp<IBinder> getToken(const sp<IBinder>& clientToken)
+    {
+	ALOGI("getToken\n");
+        return NULL;
+    }
+#endif
 };
 
 };  // namespace android
